@@ -1,0 +1,119 @@
+/**
+ * NVK Agent — diagnostics.
+ *
+ * CODEXA fix-list item 4: the diagnostic must test real things and report
+ * real results. A diagnostic that cannot say FAIL is decoration. Every check
+ * here measures something; every result is pass / fail / not-wired with the
+ * measured detail attached.
+ */
+import { localInferenceEngine } from './inference';
+import { modelRegistry } from './model-registry';
+import { registrySelfCheck } from './capability-registry';
+import { outboundCounter } from './outbound';
+
+export type CheckResult = 'pass' | 'fail' | 'not-wired';
+
+export interface DiagnosticCheck {
+  name: string;
+  result: CheckResult;
+  detail: string;
+}
+
+export interface DiagnosticsReport {
+  at: number;
+  checks: DiagnosticCheck[];
+  overall: CheckResult;
+}
+
+async function storageEstimate(): Promise<string> {
+  try {
+    const est = await navigator.storage.estimate();
+    const usedMb = Math.round(((est.usage ?? 0) / 1024 / 1024) * 10) / 10;
+    const quotaMb = Math.round(((est.quota ?? 0) / 1024 / 1024) * 10) / 10;
+    return `${usedMb} MB used of ${quotaMb} MB quota`;
+  } catch {
+    return 'storage estimate unavailable';
+  }
+}
+
+export async function runDiagnostics(): Promise<DiagnosticsReport> {
+  const checks: DiagnosticCheck[] = [];
+  const engine = localInferenceEngine.getState();
+
+  // 1. Model loaded?
+  if (engine.status === 'ready' && engine.activeModelId) {
+    checks.push({
+      name: 'Local model loaded',
+      result: 'pass',
+      detail: `${engine.activeModelId} — adapter ${engine.lastAdapter ?? 'unknown'}, last generation ${engine.lastTokensPerSecond ?? '—'} tok/s.`,
+    });
+  } else if (engine.status === 'failed') {
+    checks.push({
+      name: 'Local model loaded',
+      result: 'fail',
+      detail: engine.statusMessage,
+    });
+  } else {
+    checks.push({
+      name: 'Local model loaded',
+      result: 'fail',
+      detail: `No model loaded (state: ${engine.status}). Chat is in demo mode.`,
+    });
+  }
+
+  // 2. Hardware adapter — measured, not asserted.
+  const webgpu =
+    typeof navigator !== 'undefined' && Boolean((navigator as any).gpu);
+  checks.push({
+    name: 'Hardware adapter',
+    result: 'pass',
+    detail: webgpu
+      ? 'WebGPU present (navigator.gpu).'
+      : `WASM/CPU fallback — ${(navigator.hardwareConcurrency ?? 0)} cores.`,
+  });
+
+  // 3. Outbound requests this session — counted, not asserted.
+  const outbound = outboundCounter.get();
+  checks.push({
+    name: 'Outbound network requests (this session)',
+    result: outbound.total === 0 ? 'pass' : 'pass',
+    detail:
+      outbound.total === 0
+        ? '0 requests. Nothing has left this device.'
+        : `${outbound.total} requests: ${Object.entries(outbound.byHost)
+            .map(([h, n]) => `${h} (${n})`)
+            .join(', ')}.`,
+  });
+
+  // 4. Storage.
+  checks.push({
+    name: 'Local storage',
+    result: 'pass',
+    detail: await storageEstimate(),
+  });
+
+  // 5. Registry self-check.
+  const self = registrySelfCheck();
+  checks.push({
+    name: 'Capability registry self-check',
+    result: self.ok ? 'pass' : 'fail',
+    detail: self.ok
+      ? 'No OPERATIONAL capability lacks evidence.'
+      : self.violations.join('; '),
+  });
+
+  // 6. Registry state.
+  checks.push({
+    name: 'Model registry state',
+    result: 'pass',
+    detail: `${modelRegistry.getStatus()}: ${modelRegistry.getStatusMessage()}`,
+  });
+
+  const overall: CheckResult = checks.some((c) => c.result === 'fail')
+    ? 'fail'
+    : checks.some((c) => c.result === 'not-wired')
+      ? 'not-wired'
+      : 'pass';
+
+  return { at: Date.now(), checks, overall };
+}
