@@ -40,9 +40,9 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Intelligence',
     status: 'PARTIAL',
     evidence:
-      'Engine loads real models from the Hugging Face hub and generates real text. Node validation passed (milestone-10, 2026-11-21). PARTIAL until the in-browser end-to-end run passes on a real device.',
+      'Engine loads real models from the Hugging Face hub and generates real text. Node validation passed (milestone-10, 2026-11-21), including through the engine path (test:milestone-10-engine). Browser run 2026-11-21 14:04 PT FAILED pre-fix (empty replies — chat template skipped, see docs/MILESTONE-10.md); fix pushed the same day. PARTIAL until the in-browser end-to-end run passes on a real device.',
     lastVerified: '2026-11-21',
-    notes: 'Default model Xenova/Qwen1.5-0.5B-Chat. No canned fallback anywhere.',
+    notes: 'Default model Xenova/Qwen1.5-0.5B-Chat. No smaller model that answers 2+2 was found (SmolLM 401, Flan-77M fails, distilgpt2 counts). Browser cache ON; WASM threads capped to 2 on low-memory devices; honest low-memory warning before download.',
   },
   {
     id: 'milestone-10-validation',
@@ -50,9 +50,9 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Intelligence',
     status: 'OPERATIONAL',
     evidence:
-      'PASSED 2026-11-21 in Node on this VM: Qwen1.5-0.5B-Chat loaded in 6.0s (cached), answered "Two plus two equals four." in 2,976 ms (~1.7 tok/s). Full log in docs/MILESTONE-10.md.',
+      'PASSED 2026-11-21 in Node on this VM: Qwen1.5-0.5B-Chat loaded in 6.0s (cached), answered "Two plus two equals four." in 2,976 ms (~1.7 tok/s). Also passed through the engine path the same day (test:milestone-10-engine, browser chat defaults). Full log in docs/MILESTONE-10.md.',
     lastVerified: '2026-11-21',
-    notes: 'Browser end-to-end run still pending — the in-browser path is the product’s real path. Flan-T5-248M failed this test in five prompt shapes (see docs/MILESTONE-10.md).',
+    notes: 'Browser end-to-end run FAILED pre-fix 2026-11-21 14:04 PT (empty replies, template bug) — retest pending after the fix. Flan-T5-248M failed this test in five prompt shapes (see docs/MILESTONE-10.md).',
   },
   {
     id: 'agent-pipeline',

@@ -25,9 +25,16 @@ const CHAT_TEMPLATE =
   '<|im_start|>user\n{{prompt}}<|im_end|>\n<|im_start|>assistant\n';
 
 // Mirrors checkMilestone10Answer in src/intelligence/inference.ts — keep in sync.
+// Token-based: "4" / "four" as a standalone whitespace token (sentence
+// punctuation stripped). A counting ramble like "1.2.1.2.3.4.5.6" contains
+// a 4 but is not an answer and must FAIL.
 function checkAnswer(answer) {
-  const m = answer.match(/\b(4|four)\b/i);
-  return { pass: m !== null, matched: m ? m[1] : null };
+  const tokens = answer
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, ''));
+  const matched = tokens.find((t) => t === '4' || /^four$/i.test(t)) ?? null;
+  return { pass: matched !== null, matched: matched ?? null };
 }
 
 const started = Date.now();

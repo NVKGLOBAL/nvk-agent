@@ -46,6 +46,18 @@ export interface ModelDescriptor {
 }
 
 export const MODEL_CATALOG: ModelDescriptor[] = [
+  // Small-model probe, 2026-11-21 (mobile default search): NO smaller model
+  // that actually answers 2+2 was found, so Qwen1.5-0.5B-Chat stays the
+  // default on every device. Probed in Node: Xenova/SmolLM-135M[-Instruct]
+  // and SmolLM2/Qwen2-0.5B-Instruct all return HTTP 401 from the Hugging
+  // Face hub (unverifiable here); LaMini-Flan-T5-77M (94 MB) answered
+  // "2+2 is a word that has two equal sides." (FAIL); distilgpt2 (82 MB)
+  // "answered" by counting "1.2.1.2.3.4.5.6" — a false pass under the old
+  // word-boundary check, correctly FAILED by the tightened token check.
+  // The iPhone crash path is therefore mitigated, not model-swapped: browser
+  // cache ON (a crash no longer forces a full re-download), WASM threads
+  // capped to 2 on low-memory devices, and an honest low-memory warning
+  // before download. See docs/MILESTONE-10.md.
   {
     id: 'Xenova/Qwen1.5-0.5B-Chat',
     name: 'Qwen 1.5 0.5B Chat',
@@ -102,7 +114,8 @@ export const MODEL_CATALOG: ModelDescriptor[] = [
     requiredRamGb: 0.3,
     runtime: 'wasm_cpu',
     quantization: 'onnx',
-    description: 'Instant-loading micro engine. Smallest model in the catalog.',
+    description:
+      'Instant-loading micro engine. Smallest model in the catalog — but it does NOT answer questions: probed 2026-11-21 it "answered" 2+2 by counting "1.2.1.2.3.4.5.6" (fails the tightened milestone check). Load-anywhere fallback only, never the default, never READY.',
     expectedSha256: null,
     isInstalled: false,
     isLoaded: false,

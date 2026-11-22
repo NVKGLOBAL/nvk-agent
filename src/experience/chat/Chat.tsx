@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { runPipeline, PipelineResult } from '../../intelligence/pipeline';
-import { localInferenceEngine, EngineState } from '../../intelligence/inference';
+import { localInferenceEngine, EngineState, isLowMemoryDevice } from '../../intelligence/inference';
 import { modelRegistry } from '../../intelligence/model-registry';
 import { settingsStore } from '../../intelligence/settings';
 import { memoryStore, ConversationTurn } from '../../intelligence/memory';
@@ -100,6 +100,23 @@ export function Chat() {
 
       {engine.status !== 'ready' && (
         <div style={styles.download}>
+          {isLowMemoryDevice() && (
+            <p style={styles.warning}>
+              This device has limited memory (phone / small device): the{' '}
+              {modelRegistry.getActiveModel()?.downloadSizeMb ?? '?'} MB model
+              may crash mobile Safari while it loads. If it does, the weights
+              stay cached on this device, so the next attempt loads from cache
+              instead of downloading again. No smaller model that actually
+              answers questions was found — this is the only one that passes
+              the 2+2 test.
+            </p>
+          )}
+          {engine.cachedBeforeLoad === true && (
+            <p style={styles.small}>
+              Weights cached on this device — loading from cache, no
+              re-download.
+            </p>
+          )}
           <label>
             <input
               type="checkbox"
@@ -191,6 +208,14 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#ffd166',
     borderRadius: 12,
     padding: '10px 14px',
+  },
+  warning: {
+    border: '1px solid #7a5b00',
+    background: '#241c05',
+    color: '#ffd166',
+    borderRadius: 12,
+    padding: '10px 14px',
+    margin: 0,
   },
   download: {
     border: '1px dashed #2a3b4d',

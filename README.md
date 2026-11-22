@@ -14,11 +14,25 @@ chat box that performs answers.
 ## What works today (v0.1.0)
 
 - **Local inference, real.** Transformers.js in-browser inference. Default
-  model `Xenova/Qwen1.5-0.5B-Chat` (~350 MB, CPU/WASM, no GPU). Loads real
-  weights from the Hugging Face hub with real download progress and measured
-  tokens/s. **No canned fallback anywhere** — if no model is loaded, chat says
-  so (demo mode) and refuses to fake a reply. That is the fix for CODEXA's
-  2+2 failure, enforced by a test.
+  model `Xenova/Qwen1.5-0.5B-Chat` (~350 MB, WASM — transformers.js 2.17.2
+  runs WASM only in the browser, no WebGPU despite what the old banner
+  claimed). Loads real weights from the Hugging Face hub with real download
+  progress and measured tokens/s. Weights are cached in the browser Cache
+  API after the first download, so a crashed load does not force a full
+  re-download. **No canned fallback anywhere** — if no model is loaded, chat
+  says so (demo mode) and refuses to fake a reply. That is the fix for
+  CODEXA's 2+2 failure, enforced by a test.
+- **Fixed 2026-11-21 — browser empty-reply bug.** The live preview loaded
+  the model fine but answered NOTHING: the engine never assigned its
+  `activeModelId` field, so the chat template was silently skipped and Qwen
+  got a raw prompt and emitted EOS immediately. Reproduced, fixed
+  (`buildFullPrompt` is now a tested pure function), and verified through
+  the engine path (`npm run test:milestone-10-engine`). Same fix round:
+  browser cache ON (was off — the iPhone re-download loop), WASM threads
+  capped to 2 on low-memory devices, honest low-memory warning before
+  download, adapter label corrected to WASM. No smaller model that answers
+  2+2 was found (SmolLM 401, Flan-77M fails, distilgpt2 counts) — Qwen
+  stays the default; see `docs/MILESTONE-10.md`. Browser retest pending.
 - **Milestone-10 test.** `npm run test:milestone-10` loads the model and asks
   *"What is 2+2? Answer in one word."* PASS requires the answer **"4"**. See
   `docs/MILESTONE-10.md` for the latest run evidence.
@@ -79,6 +93,7 @@ npm run dev        # Vite dev server
 npm run build      # typecheck + production build
 npm test           # honesty tests (registry, engine, permissions)
 npm run test:milestone-10   # the 2+2 test — downloads ~350 MB on first run
+npm run test:milestone-10-engine  # the 2+2 test through the real engine path
 ```
 
 ## Rules this repo lives by

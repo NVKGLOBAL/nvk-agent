@@ -64,7 +64,8 @@ export const INFERENCE_MODELS: InferenceModel[] = [
     name: 'DistilGPT-2',
     task: 'text-generation',
     size: '82 MB',
-    description: 'Instant-loading micro engine. Smallest model in the catalog.',
+    description:
+      'Instant-loading micro engine. Smallest model in the catalog — but it does NOT answer questions: probed 2026-11-21 it "answered" 2+2 by counting "1.2.1.2.3.4.5.6" (a false pass under the old word-boundary check; the tightened token check fails it). Kept as a load-anywhere fallback, never the default, never marked READY.',
     chatTemplate: null,
   },
 ];
@@ -72,15 +73,53 @@ export const INFERENCE_MODELS: InferenceModel[] = [
 /**
  * Milestone-10 answer check, shared by the engine validation and the Node
  * test (mirrored in tests/milestone-10.mjs — keep them in sync).
- * PASS when the answer contains 4 or "four" as a standalone word.
+ * PASS when the answer contains 4 or "four" as a standalone token.
  * "Four" counts: a correct answer in words is a correct answer.
+ * Token-based on purpose: a counting ramble like "1.2.1.2.3.4.5.6"
+ * (distilgpt2, probed 2026-11-21) contains a 4 but is not an answer, and
+ * must FAIL. Tokens are split on whitespace with sentence punctuation
+ * stripped, so "4", "4.", "(4)" and "four." pass, while "14" and "3.4.5"
+ * do not.
  */
 export function checkMilestone10Answer(answer: string): {
   pass: boolean;
   matched: string | null;
 } {
-  const m = answer.match(/\b(4|four)\b/i);
-  return { pass: m !== null, matched: m ? m[1] : null };
+  const tokens = answer
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => t.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, ''));
+  const matched = tokens.find((t) => t === '4' || /^four$/i.test(t)) ?? null;
+  return { pass: matched !== null, matched };
+}
+
+/**
+ * Low-memory device check, measured from the real device — never asserted.
+ * iOS Safari exposes no deviceMemory API and kills tabs aggressively
+ * (jetsam), so iPhones/iPads count as low-memory. Android with <= 4 GB
+ * RAM (when known) or <= 4 cores also counts. Used to cap WASM threads
+ * and to warn before a 350 MB download.
+ */
+export function isLowMemoryDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const mem = (navigator as any).deviceMemory;
+  if (typeof mem === 'number' && mem <= 4) return true;
+  const ua = navigator.userAgent ?? '';
+  if (/iPhone|iPad|iPod/.test(ua)) return true;
+  if (/Android/.test(ua) && (navigator.hardwareConcurrency ?? 99) <= 4) return true;
+  return false;
+}
+
+/**
+ * Build the full prompt for a model. Chat-tuned models get their chat
+ * template; plain models get the raw prompt. Pure function so the
+ * template path is testable without loading a model — this is the exact
+ * spot the 2026-11-21 browser bug lived: generate() resolved the model
+ * from a field that was never assigned, so the template was silently
+ * skipped and Qwen got a raw prompt and emitted EOS immediately.
+ */
+export function buildFullPrompt(model: InferenceModel | null, prompt: string): string {
+  return model?.chatTemplate ? model.chatTemplate.replace('{{prompt}}', prompt) : prompt;
 }
 
 export type EngineStatus =
@@ -99,8 +138,19 @@ export interface EngineState {
   /** Measured tokens/second from the most recent generation. Null until one runs. */
   lastTokensPerSecond: number | null;
   lastGenerationMs: number | null;
-  /** Adapter actually in use for the last load. */
-  lastAdapter: 'webgpu' | 'wasm' | null;
+  /**
+   * Adapter actually in use for the last load. transformers.js 2.17.2 runs
+   * WASM only in the browser (its onnx.js executionProviders are ['wasm'];
+   * 'webgpu' is commented out) — so this is 'wasm' in the browser and
+   * 'cpu' in Node. Never 'webgpu' until the library actually uses it.
+   */
+  lastAdapter: 'webgpu' | 'wasm' | 'cpu' | null;
+  /**
+   * Whether the model weights were already in the browser Cache API when
+   * the last load started. Null until a load runs. A crash no longer means
+   * a full re-download when this is true.
+   */
+  cachedBeforeLoad: boolean | null;
 }
 
 export class ModelNotLoadedError extends Error {
@@ -142,6 +192,7 @@ export class LocalInferenceEngine {
     lastTokensPerSecond: null,
     lastGenerationMs: null,
     lastAdapter: null,
+    cachedBeforeLoad: null,
   };
   private listeners = new Set<() => void>();
   private loading: Promise<boolean> | null = null;
@@ -199,12 +250,39 @@ export class LocalInferenceEngine {
     onProgress?: ProgressCallback,
   ): Promise<boolean> {
     const model = INFERENCE_MODELS.find((m) => m.id === modelId) ?? INFERENCE_MODELS[0];
+    // THE FIX (2026-11-21 browser bug): the private field is what generate()
+    // reads to find the model and apply its chat template. v0.1.0 only set
+    // the *state* copy here, so generate() always saw null, skipped the
+    // template, and Qwen got a raw prompt and emitted EOS immediately —
+    // empty replies in the browser while Node (which applied the template
+    // directly) passed. Both are set now.
+    this.activeModelId = model.id;
+
+    // Low-memory devices (iPhone/iPad, <= 4 GB RAM): cap WASM threads to
+    // lower peak memory during session creation — the moment iOS kills the
+    // tab. This is a mitigation, not a guarantee; the crash cause is
+    // unconfirmed (leading hypothesis: iOS jetsam on the 350 MB model).
+    if (isLowMemoryDevice()) {
+      try {
+        (env.backends.onnx as unknown as { wasm?: { numThreads?: number } }).wasm!.numThreads = 2;
+      } catch {
+        /* thread cap is best-effort */
+      }
+    }
+
+    // Cache pre-check (transformers-cache, the Cache API store the library
+    // uses): a previous download — even one cut short by a crash — must
+    // not force a full re-download. The status message says which it is.
+    const cached = await isModelCached(model.id);
     this.state = {
       ...this.state,
       status: 'downloading',
       activeModelId: model.id,
       progress: 0,
-      statusMessage: `Downloading ${model.name} weights…`,
+      cachedBeforeLoad: cached,
+      statusMessage: cached
+        ? `Loading ${model.name} weights from this device (cached)…`
+        : `Downloading ${model.name} weights…`,
     };
     this.notify();
 
@@ -229,12 +307,12 @@ export class LocalInferenceEngine {
         },
       });
 
-      // Adapter is measured, not asserted: WebGPU is present only if the
-      // browser exposes it and the runtime can use it.
-      const adapter: 'webgpu' | 'wasm' =
-        typeof navigator !== 'undefined' && (navigator as any).gpu
-          ? 'webgpu'
-          : 'wasm';
+      // Adapter is measured, not asserted. transformers.js 2.17.2 runs
+      // WASM only in the browser — its onnx.js executionProviders are
+      // ['wasm'] ('webgpu' is commented out) — so navigator.gpu presence
+      // means nothing here. v0.1.0 reported 'webgpu' from navigator.gpu
+      // alone; that was a false claim and is fixed.
+      const adapter: 'wasm' | 'cpu' = typeof window !== 'undefined' ? 'wasm' : 'cpu';
       this.state = {
         ...this.state,
         status: 'ready',
@@ -271,10 +349,11 @@ export class LocalInferenceEngine {
     this.notify();
 
     // Chat-tuned models get their chat template; plain models get the raw prompt.
-    const model = INFERENCE_MODELS.find((m) => m.id === this.activeModelId) ?? null;
-    const fullPrompt = model?.chatTemplate
-      ? model.chatTemplate.replace('{{prompt}}', prompt)
-      : prompt;
+    // Resolve the model from the field first, the state copy as fallback —
+    // the template must never be silently skipped again (see doLoad).
+    const modelId = this.activeModelId ?? this.state.activeModelId;
+    const model = INFERENCE_MODELS.find((m) => m.id === modelId) ?? null;
+    const fullPrompt = buildFullPrompt(model, prompt);
 
     const started = performance.now();
     try {
@@ -350,8 +429,27 @@ export class LocalInferenceEngine {
       lastTokensPerSecond: null,
       lastGenerationMs: null,
       lastAdapter: null,
+      cachedBeforeLoad: null,
     };
     this.notify();
+  }
+}
+
+/**
+ * Cache pre-check: is any file for this model already in the browser Cache
+ * API store transformers.js uses ('transformers-cache', keyed by the full
+ * Hugging Face URL)? Checked BEFORE instantiation so a load that follows
+ * a crash reports "cached — loading from this device" instead of starting
+ * a full re-download with no explanation. False in Node (no Cache API).
+ */
+export async function isModelCached(modelId: string): Promise<boolean> {
+  try {
+    if (typeof caches === 'undefined') return false;
+    const cache = await caches.open('transformers-cache');
+    const keys = await cache.keys();
+    return keys.some((r) => r.url.includes(modelId));
+  } catch {
+    return false;
   }
 }
 
@@ -359,8 +457,12 @@ export const localInferenceEngine = new LocalInferenceEngine();
 
 // Keep Transformers.js honest about where weights may come from in the browser:
 // remote Hugging Face hub only (the browser Cache API), never local files.
+// useBrowserCache MUST stay true: v0.1.0 set it false, which meant every
+// load re-downloaded the full 350 MB — after an iPhone crash the app asked
+// for the whole download again, and again. With it on, a crashed load's
+// weights are already on the device and the retry loads from cache.
 if (typeof window !== 'undefined') {
   env.allowLocalModels = false;
-  env.useBrowserCache = false;
+  env.useBrowserCache = true;
   env.useCustomCache = false;
 }

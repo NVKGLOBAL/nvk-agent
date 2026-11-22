@@ -6,8 +6,8 @@ the Unification Directive §1 classifications.
 
 | Capability | Layer | Status | Evidence / gap |
 |---|---|---|---|
-| Local inference (Transformers.js, in-browser) | Intelligence | PARTIAL | Engine loads real models and generates real text. Node validation passed (milestone-10, 2026-11-21). PARTIAL until the in-browser end-to-end run passes on a real device. |
-| Milestone-10 validation test (2+2 → 4) | Intelligence | OPERATIONAL | PASSED 2026-11-21 in Node on this VM: Qwen1.5-0.5B-Chat loaded in 6.0s (cached), answered "Two plus two equals four." in 2,976 ms (~1.7 tok/s). Full log in docs/MILESTONE-10.md. Browser end-to-end run still pending. |
+| Local inference (Transformers.js, in-browser) | Intelligence | PARTIAL | Engine loads real models and generates real text. Node validation passed (milestone-10, 2026-11-21), including through the engine path (test:milestone-10-engine). Browser run 2026-11-21 14:04 PT FAILED pre-fix (empty replies — chat template skipped, see docs/MILESTONE-10.md); fix pushed the same day. PARTIAL until the in-browser end-to-end run passes on a real device. |
+| Milestone-10 validation test (2+2 → 4) | Intelligence | OPERATIONAL | PASSED 2026-11-21 in Node on this VM: Qwen1.5-0.5B-Chat loaded in 6.0s (cached), answered "Two plus two equals four." in 2,976 ms (~1.7 tok/s). Also passed through the engine path the same day (test:milestone-10-engine, browser chat defaults). Full log in docs/MILESTONE-10.md. Browser end-to-end run FAILED pre-fix 2026-11-21 14:04 PT (empty replies, template bug) — retest pending after the fix. |
 | Agent pipeline (11 stages) | Intelligence | OPERATIONAL | `src/intelligence/pipeline.ts` implements all 11 stages with real stage events, timing, evidence records. |
 | Capability registry | Intelligence | OPERATIONAL | Registry loads; tests assert no OPERATIONAL entry lacks evidence. |
 | Permission gate | Intelligence | OPERATIONAL | `src/intelligence/permissions.ts` denies restricted actions unless the owner approves them in-session. |

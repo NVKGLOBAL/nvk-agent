@@ -61,15 +61,16 @@ export async function runDiagnostics(): Promise<DiagnosticsReport> {
     });
   }
 
-  // 2. Hardware adapter — measured, not asserted.
+  // 2. Hardware adapter — measured, not asserted. transformers.js 2.17.2
+  // runs WASM only in the browser (its executionProviders are ['wasm'];
+  // 'webgpu' is commented out), so navigator.gpu presence is NOT the
+  // adapter — v0.1.0 reported "WebGPU present" as if it were in use.
   const webgpu =
     typeof navigator !== 'undefined' && Boolean((navigator as any).gpu);
   checks.push({
     name: 'Hardware adapter',
     result: 'pass',
-    detail: webgpu
-      ? 'WebGPU present (navigator.gpu).'
-      : `WASM/CPU fallback — ${(navigator.hardwareConcurrency ?? 0)} cores.`,
+    detail: `ONNX runtime: WASM (this transformers.js version uses WASM only in the browser). WebGPU ${webgpu ? 'present in this browser, not used' : 'not present'} · ${(navigator.hardwareConcurrency ?? 0)} cores.`,
   });
 
   // 3. Outbound requests this session — counted, not asserted.
@@ -102,11 +103,13 @@ export async function runDiagnostics(): Promise<DiagnosticsReport> {
       : self.violations.join('; '),
   });
 
-  // 6. Registry state.
+  // 6. Registry state — the result follows the status. A FAILED registry
+  // reported as 'pass' would hide a broken model behind a green overall.
+  const regStatus = modelRegistry.getStatus();
   checks.push({
     name: 'Model registry state',
-    result: 'pass',
-    detail: `${modelRegistry.getStatus()}: ${modelRegistry.getStatusMessage()}`,
+    result: regStatus === 'READY' ? 'pass' : regStatus === 'FAILED' ? 'fail' : 'not-wired',
+    detail: `${regStatus}: ${modelRegistry.getStatusMessage()}`,
   });
 
   const overall: CheckResult = checks.some((c) => c.result === 'fail')

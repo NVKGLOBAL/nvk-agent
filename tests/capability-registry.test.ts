@@ -21,10 +21,46 @@ import {
   CAPABILITIES,
   registrySelfCheck,
 } from '../src/intelligence/capability-registry';
-import { LocalInferenceEngine, ModelNotLoadedError } from '../src/intelligence/inference';
+import {
+  LocalInferenceEngine,
+  ModelNotLoadedError,
+  checkMilestone10Answer,
+  buildFullPrompt,
+  isLowMemoryDevice,
+  INFERENCE_MODELS,
+} from '../src/intelligence/inference';
 import { PermissionGate } from '../src/intelligence/permissions';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+test('milestone-10 check: real answers pass, counting rambles fail', () => {
+  // Real answers.
+  assert.equal(checkMilestone10Answer('Two plus two equals four.').pass, true);
+  assert.equal(checkMilestone10Answer('4').pass, true);
+  assert.equal(checkMilestone10Answer('The answer is 4.').pass, true);
+  assert.equal(checkMilestone10Answer('(four)').pass, true);
+  // Not answers: distilgpt2's 2026-11-21 "answer" counts "1.2.1.2.3.4.5.6"
+  // and contains a 4 by accident — the old word-boundary check passed it.
+  assert.equal(checkMilestone10Answer('1.2.1.2.3.4.5.6').pass, false);
+  assert.equal(checkMilestone10Answer('The answer is 14.').pass, false);
+  assert.equal(checkMilestone10Answer('2+2 is a word that has two equal sides.').pass, false);
+  assert.equal(checkMilestone10Answer('').pass, false);
+});
+
+test('prompt builder: chat model gets its template, plain model gets raw prompt', () => {
+  const qwen = INFERENCE_MODELS.find((m) => m.id === 'Xenova/Qwen1.5-0.5B-Chat');
+  const flan = INFERENCE_MODELS.find((m) => m.id === 'Xenova/LaMini-Flan-T5-248M');
+  assert.ok(qwen && flan);
+  const templated = buildFullPrompt(qwen, 'What is 2+2?');
+  assert.match(templated, /<\|im_start\|>assistant/);
+  assert.match(templated, /What is 2\+2\?/);
+  assert.equal(buildFullPrompt(flan, 'What is 2+2?'), 'What is 2+2?');
+  assert.equal(buildFullPrompt(null, 'What is 2+2?'), 'What is 2+2?');
+});
+
+test('low-memory detection: no navigator (Node) is not low-memory', () => {
+  assert.equal(isLowMemoryDevice(), false);
+});
 
 test('registry self-check: no OPERATIONAL capability without evidence', () => {
   const { ok, violations } = registrySelfCheck();
