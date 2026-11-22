@@ -133,7 +133,18 @@ export async function runPipeline(
         'Demo mode — no model is loaded, so I cannot answer from intelligence yet. ' +
         'Download a model (Qwen 1.5 0.5B Chat, ~350 MB) or connect a provider in Settings to chat for real.';
     } else {
-      const result = await localInferenceEngine.generate(input, { maxNewTokens: 256 });
+      // Greedy decoding (temperature 0): the only generation config ever
+      // validated to answer correctly. The v0.1.1 chat path omitted
+      // temperature, so the engine defaulted to sampling at 0.7 — and
+      // sampling on this 0.5B model made 2+2 a coin flip (Node repro
+      // 2026-11-21: "Two + Two is two!", "Two." in 2 of 3 runs; the
+      // browser drew "1"), while the validation path's greedy call
+      // answered correctly every time. Same engine, same template —
+      // the sampling was the whole divergence.
+      const result = await localInferenceEngine.generate(input, {
+        maxNewTokens: 256,
+        temperature: 0,
+      });
       modelId = result.modelId;
       answer = result.text;
       push(

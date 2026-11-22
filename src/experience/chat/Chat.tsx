@@ -77,6 +77,9 @@ export function Chat() {
             <strong>Local model loaded:</strong> {engine.activeModelId} · adapter{' '}
             {engine.lastAdapter ?? 'unknown'} · last generation{' '}
             {engine.lastTokensPerSecond ?? '—'} tok/s
+            {engine.cachedBeforeLoad === true && (
+              <> · weights from cache (no re-download)</>
+            )}
           </p>
         ) : settings.cloudEnabled && settings.providerKey ? (
           <p>

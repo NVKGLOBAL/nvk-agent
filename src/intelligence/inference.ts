@@ -357,11 +357,20 @@ export class LocalInferenceEngine {
 
     const started = performance.now();
     try {
+      // Greedy decoding (temperature 0) is the DEFAULT and the only
+      // config ever validated to answer correctly. Sampling (temperature
+      // 0.7) was the chat default in v0.1.1 and made 2+2 a coin flip on
+      // this 0.5B model — reproduced 2026-11-21 in Node through the real
+      // runPipeline path: temp 0.7 answered "Two + Two is two!" and
+      // "Two." in 2 of 3 runs (the browser drew "1"); greedy answered
+      // "Two plus two equals four." every time. Sampling stays available
+      // to callers that explicitly opt in with temperature > 0.
+      const temperature = options.temperature ?? 0;
       const output = await this.generator(fullPrompt, {
         max_new_tokens: maxNewTokens,
-        temperature: options.temperature ?? 0.7,
+        temperature,
         // Greedy when temperature is 0; sampling otherwise.
-        do_sample: (options.temperature ?? 0.7) > 0,
+        do_sample: temperature > 0,
         repetition_penalty: 1.15,
       });
       const elapsedMs = performance.now() - started;

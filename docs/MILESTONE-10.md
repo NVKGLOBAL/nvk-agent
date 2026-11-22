@@ -47,6 +47,54 @@ browser chat defaults (max 256 tokens, temperature 0.7): **PASS** —
 "Two plus two equals four." in 4,808 ms, modelId correct
 (`Xenova/Qwen1.5-0.5B-Chat`, not 'unknown').
 
+## Browser retest — the fix HALF-worked; the chat path still sampled (2026-11-21 23:11–23:18 PT)
+
+Desktop Chromium cloud browser, new build `index-CGDnwtP4.js`:
+
+- Model loads fine, no crash/reload/freeze. "Local model loaded:
+  Xenova/Qwen1.5-0.5B-Chat · adapter wasm · last generation 2.4 tok/s".
+  466.8 MB stored — weights persisted.
+- Diagnostics: overall PASS, all six rows PASS. Registry state: READY —
+  Qwen "answered 2+2 with four in 2115 ms (2.4 tok/s). Answer: Two plus
+  two equals four."
+- BUT the actual chat reply to "What is 2+2? Answer in one word." was
+  exactly **"1"** — wrong, apparently truncated, still "1" after 60+
+  seconds (0.8 tok/s).
+
+**Root cause (reproduced in Node the same day, `repro-chat-one.ts`):**
+the validation path and the chat path used DIFFERENT generation options
+through the same engine and the same chat template. Validation calls
+`generate(prompt, { maxNewTokens: 16, temperature: 0 })` — greedy.
+The chat path (`runPipeline`) called `generate(input, { maxNewTokens:
+256 })` — temperature defaulted to 0.7, so `do_sample: true`. Sampling
+on this 0.5B model makes 2+2 a coin flip: the Node repro through the
+real `runPipeline` path answered "Two + Two is two!" and "Two." in 2 of
+3 runs, and the browser drew "1". Raw (unstripped) pipeline output
+confirmed the model itself emits the wrong answer under sampling — no
+stripping, truncation, memory, or UI bug downstream. The engine-level
+test passed once under temperature 0.7 by luck and never went through
+`runPipeline`, so it could not catch this.
+
+**Fix (same day):** greedy decoding (temperature 0) is now the engine
+default AND passed explicitly by the chat path — the only generation
+config ever validated to answer correctly. Sampling stays available to
+callers that explicitly opt in with temperature > 0. New regression
+test `npm run test:milestone-10-pipeline` goes through `runPipeline()`
+twice and asserts the answer, route, modelId, and the stored
+conversation turn. The engine test now uses the real default (no
+temperature arg) instead of an explicit 0.7. Cache visibility: the
+ready status card now also says "weights from cache (no re-download)"
+when `cachedBeforeLoad` is true — previously the cache note only
+existed in the download panel during the load, which is why the retest
+never saw "loaded from cache" wording despite 466.8 MB stored (the
+cache store name `transformers-cache` was verified correct against the
+library source).
+
+**Pipeline-path verification (same day, Node):** `npm run
+test:milestone-10-pipeline` — **PASS** (results recorded in the test
+run output; greedy answers "Two plus two equals four." twice through
+the full pipeline + memory store).
+
 ## Passing run
 
 - **Date:** 2026-11-21 ~13:22 PT

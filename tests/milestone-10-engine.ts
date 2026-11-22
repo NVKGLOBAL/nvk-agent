@@ -7,9 +7,13 @@
  * generate() skipped the chat template, Qwen got a raw prompt, emitted
  * EOS immediately, and the browser showed empty replies while Node passed.
  * This script goes through LocalInferenceEngine.load() + generate() with
- * the browser chat defaults (maxNewTokens 256, temperature 0.7) and asserts
- * the answer passes AND the reported modelId is the real model (not
- * 'unknown'). Exit code 0 = PASS, 1 = FAIL.
+ * the browser chat defaults (maxNewTokens 256, greedy — temperature 0 is
+ * the engine default) and asserts the answer passes AND the reported
+ * modelId is the real model (not 'unknown'). Exit code 0 = PASS, 1 = FAIL.
+ * (v0.1.1 called this with temperature 0.7 explicitly; that was the chat
+ * default then, and it passed once by luck — sampling on this 0.5B model
+ * made 2+2 a coin flip. The default is greedy now; this test uses the
+ * default, no temperature arg, so it tests what the chat path actually does.)
  *
  * Run: npm run test:milestone-10-engine
  */
@@ -29,7 +33,7 @@ const state = localInferenceEngine.getState();
 console.log(`Engine state: activeModelId=${state.activeModelId} adapter=${state.lastAdapter}`);
 
 const genStarted = Date.now();
-const result = await localInferenceEngine.generate(PROMPT, { maxNewTokens: 256, temperature: 0.7 });
+const result = await localInferenceEngine.generate(PROMPT, { maxNewTokens: 256 });
 const elapsedMs = Date.now() - genStarted;
 console.log(`Answer: ${JSON.stringify(result.text)} (${elapsedMs} ms, ${result.tokensPerSecond} tok/s, modelId=${result.modelId})`);
 
