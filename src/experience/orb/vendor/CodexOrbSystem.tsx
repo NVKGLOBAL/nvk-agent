@@ -39,6 +39,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { NEXUS_GATEWAYS } from './constants';
 import type { PortalAnimationType, ActiveView, NexusGateway } from './types';
+import type { OrbVisualInput } from '../orb-state';
 import { audio } from './audio';
 import ProjectViewer from './ProjectViewer';
 import { createNexusOrb } from './NexusOrb';
@@ -49,9 +50,15 @@ interface CodexOrbSystemProps {
   onNavigateNewTab: (url: string, animationType: PortalAnimationType) => void;
   /** v0.1.4: reports a clicked gateway to the host (DOM controls + status). */
   onGatewaySelect?: (gatewayId: string) => void;
+  /**
+   * v0.1.5 (Phase A): the orb's visual input (color / entropy / pulse)
+   * for the current real pipeline state. The host owns the mapping
+   * (orb-state.ts); this file only applies it to the shader orb.
+   */
+  visualInput?: OrbVisualInput;
 }
 
-const CodexOrbSystem: React.FC<CodexOrbSystemProps> = ({ onNavigate, onNavigateExternal, onNavigateNewTab, onGatewaySelect }) => {
+const CodexOrbSystem: React.FC<CodexOrbSystemProps> = ({ onNavigate, onNavigateExternal, onNavigateNewTab, onGatewaySelect, visualInput }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isMounted = useRef(false);
     const [isReady, setIsReady] = useState(false);
@@ -60,6 +67,11 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps> = ({ onNavigate, onNavigateE
     // re-init when the parent re-renders with a new callback identity.
     const onGatewaySelectRef = useRef(onGatewaySelect);
     onGatewaySelectRef.current = onGatewaySelect;
+    // v0.1.5: same pattern for the visual input — the three.js effect
+    // reads the ref each frame; a new object identity per render must
+    // never re-init the scene.
+    const visualInputRef = useRef(visualInput);
+    visualInputRef.current = visualInput;
     
     // Interaction refs
     const isDragging = useRef(false);
@@ -80,7 +92,7 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps> = ({ onNavigate, onNavigateE
         let animationFrameId: number;
 
         let scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer | null = null, composer: EffectComposer, controls: OrbitControls;
-        let nexusOrb: { object: THREE.Group, update: (time: number, isHovered: boolean) => void};
+        let nexusOrb: { object: THREE.Group, update: (time: number, isHovered: boolean, visual?: OrbVisualInput) => void};
         let orbitGroup: THREE.Group;
         // v0.1.4: the galaxy + star shell live in THIS scene (see header
         // note 1) — the separate ParticleBackground layer was invisible
@@ -593,10 +605,12 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps> = ({ onNavigate, onNavigateE
                 orbitGroup.rotation.x = THREE.MathUtils.clamp(orbitGroup.rotation.x, -0.35, 0.35);
             }
             
-            // Update Main Orb
+            // Update Main Orb — v0.1.5 (Phase A): the current visual
+            // input rides in from the host ref, so the shader orb shows
+            // the real pipeline state (color / entropy / pulse).
             if (nexusOrb) {
                 const isCoreHovered = !!(INTERSECTED && INTERSECTED.userData.id === 'nexus-orb');
-                nexusOrb.update(elapsedTime, isCoreHovered);
+                nexusOrb.update(elapsedTime, isCoreHovered, visualInputRef.current);
             }
             
             composer.render();

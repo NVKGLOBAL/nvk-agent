@@ -11,8 +11,8 @@ unification gap-fill pass (SHA-verified where recorded).
 
 | File | Source blob SHA | Changes |
 |---|---|---|
-| NexusOrb.tsx | `20410bb0f5fde5fc8740581d0a52c16a9caed8b0` | None. `createNexusOrb()` factory, simplex-noise shaders. |
-| CodexOrbSystem.tsx | `b65184e` (short) | None. |
+| NexusOrb.tsx | `20410bb0f5fde5fc8740581d0a52c16a9caed8b0` | v0.1.5 (Phase A): `uColor`/`uEntropy` uniforms on both shaders + optional visual argument on `update()` (color/entropy/pulse from the host's OrbVisualInput). Defaults reproduce the original hardcoded look. |
+| CodexOrbSystem.tsx | `b65184e` (short) | v0.1.5 (Phase A): optional `visualInput` prop, kept in a ref (same pattern as `onGatewaySelect`), passed to `nexusOrb.update()` each frame. |
 | CodexPortalAnimation.tsx | `cfa2b4e` (short) | Import `../types` → `./types` (stale path in source; the file used to live in `components/`). |
 | FractalBurst.tsx | `1aee583` (short) | None. |
 | ParticleBackground.tsx | `4d82810` (short) | None. 250k-point galaxy. |

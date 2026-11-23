@@ -4,6 +4,10 @@
  * GitHub blob SHA: 20410bb0f5fde5fc8740581d0a52c16a9caed8b0
  * Do not simplify away: this file is the original implementation, kept verbatim
  * except for import-path fixes noted inline where the layout changed.
+ * v0.1.5 (Phase A — state discipline): uColor/uEntropy uniforms added to
+ * both shaders + an optional visual argument on update() (color/entropy/
+ * pulse from the host's OrbVisualInput). With no visual passed, the orb
+ * renders exactly as before; see docs/VENDOR-NOTES.md.
  */
 import * as THREE from 'three';
 
@@ -20,6 +24,11 @@ const vertexShader = `
 const fragmentShader = `
   uniform float uTime;
   uniform float uHover; // 0.0 when not hovered, 1.0 when hovered
+  // v0.1.5 (Phase A): state-driven visuals. uColor/uEntropy are set by
+  // update() from the host's OrbVisualInput (real pipeline state only).
+  // Defaults reproduce the original hardcoded look exactly.
+  uniform vec3 uColor;
+  uniform float uEntropy;
   varying vec3 vNormal;
   varying vec3 vPosition;
 
@@ -79,9 +88,9 @@ const fragmentShader = `
     float totalGlow = 0.0;
     vec3 p = vPosition * 2.5;
 
-    // Base swirling plasma
+    // Base swirling plasma — scaled by the state entropy (v0.1.5).
     float noise = snoise(p + uTime * 0.2);
-    totalGlow += noise * 0.2;
+    totalGlow += noise * (0.1 + uEntropy * 0.25);
 
     // Crackling energy arcs
     float energyTime = uTime * (1.0 + uHover * 2.0);
@@ -107,7 +116,8 @@ const fragmentShader = `
     float coreGlow = smoothstep(0.6, 0.0, length(vPosition));
     totalGlow += coreGlow * (0.3 + uHover * 0.5);
 
-    vec3 color = vec3(0.1, 0.7, 1.0) * (totalGlow + 0.2);
+    // v0.1.5 (Phase A): the orb color is the state color, not a constant.
+    vec3 color = uColor * (totalGlow + 0.2);
 
     gl_FragColor = vec4(color, 1.0);
   }
@@ -115,11 +125,13 @@ const fragmentShader = `
 
 const coronaFragmentShader = `
   uniform float uHover;
+  // v0.1.5 (Phase A): corona follows the state color.
+  uniform vec3 uColor;
   varying vec3 vNormal;
   void main() {
     float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 3.0);
     float opacity = fresnel * (0.3 + uHover * 0.4);
-    gl_FragColor = vec4(0.1, 0.8, 1.0, opacity);
+    gl_FragColor = vec4(uColor, opacity);
   }
 `;
 
@@ -139,6 +151,11 @@ export const createNexusOrb = () => {
         uniforms: {
             uTime: { value: 0 },
             uHover: { value: 0 },
+            // v0.1.5 (Phase A): state-driven visuals. Defaults reproduce
+            // the original hardcoded look (cyan 0.1,0.7,1.0; entropy 0.3
+            // keeps the plasma term at its original 0.2 weight).
+            uColor: { value: new THREE.Color(0.1, 0.7, 1.0) },
+            uEntropy: { value: 0.3 },
         },
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
@@ -155,6 +172,8 @@ export const createNexusOrb = () => {
     const coronaMat = new THREE.ShaderMaterial({
         uniforms: {
             uHover: { value: 0 },
+            // v0.1.5 (Phase A): corona follows the state color.
+            uColor: { value: new THREE.Color(0.1, 0.8, 1.0) },
         },
         vertexShader: vertexShader,
         fragmentShader: coronaFragmentShader,
@@ -167,12 +186,32 @@ export const createNexusOrb = () => {
     corona.name = 'corona';
     group.add(corona);
 
-    const update = (elapsedTime: number, isHovered: boolean) => {
+    // v0.1.5 (Phase A): the state color/entropy/pulse ride in as an
+    // optional third argument. Colors lerp toward the target (same
+    // smoothing as uHover) so a state change sweeps instead of snapping.
+    // Called with no visual, the orb renders exactly as before.
+    const currentColor = new THREE.Color(0.1, 0.7, 1.0);
+    const targetColor = new THREE.Color(0.1, 0.7, 1.0);
+    const update = (
+        elapsedTime: number,
+        isHovered: boolean,
+        visual?: { color: THREE.ColorRepresentation; entropy: number; pulse: number },
+    ) => {
         orbMaterial.uniforms.uTime.value = elapsedTime;
         orbMaterial.uniforms.uHover.value = THREE.MathUtils.lerp(orbMaterial.uniforms.uHover.value, isHovered ? 1.0 : 0.0, 0.1);
         coronaMat.uniforms.uHover.value = orbMaterial.uniforms.uHover.value;
 
-        const pulseSpeed = isHovered ? 10.0 : 4.0;
+        targetColor.set(visual?.color ?? 0x1ab3ff);
+        currentColor.lerp(targetColor, 0.08);
+        orbMaterial.uniforms.uColor.value.copy(currentColor);
+        coronaMat.uniforms.uColor.value.copy(currentColor);
+        orbMaterial.uniforms.uEntropy.value = THREE.MathUtils.lerp(
+            orbMaterial.uniforms.uEntropy.value as number,
+            visual?.entropy ?? 0.3,
+            0.08,
+        );
+
+        const pulseSpeed = (isHovered ? 10.0 : 4.0) * (visual?.pulse ?? 1.0);
         const pulse = 1.0 + Math.sin(elapsedTime * pulseSpeed) * 0.2;
         innerCore.scale.set(pulse, pulse, pulse);
     };

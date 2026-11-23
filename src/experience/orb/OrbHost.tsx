@@ -17,12 +17,19 @@
  * on its own: this host also renders the same four gateways as real
  * buttons under the canvas, each navigating to its panel and updating
  * the footer status. No dead controls.
+ *
+ * v0.1.5 (Phase A — state discipline): the orb's visual input (color /
+ * entropy / pulse, from orb-state.ts) is passed into the renderer as
+ * `visualInput`, so the shader orb itself — not just the footer dot —
+ * shows the real state. The 4-second return-to-idle timer was removed:
+ * a timer is not a pipeline event.
  */
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { subscribeToStages, PipelineStage } from '../../intelligence/pipeline';
 import {
-  orbStateForStage,
+  orbStateForStageEvent,
   orbStateLabel,
+  orbVisualForState,
   OrbActivityState,
 } from './orb-state';
 import { NEXUS_GATEWAYS } from './vendor/constants';
@@ -47,15 +54,16 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
   const [orbFailed, setOrbFailed] = useState(false);
   const [activeGateway, setActiveGateway] = useState<string | null>(null);
 
+  // Phase A (v0.1.5): the ONLY thing that moves the orb is a real stage
+  // event. The 4-second return-to-idle timeout that lived here in v0.1.4
+  // was a timer-driven transition — the orb showed 'idle' with no event
+  // behind it. Removed: the last real state now stands until the next
+  // real stage event arrives. A denied permission shows 'blocked' via
+  // orbStateForStageEvent (the permission event's DENIED note).
   useEffect(() => {
     const unsub = subscribeToStages((event) => {
       setLastStage(event.stage);
-      if (event.stage === 'result') {
-        setState('complete');
-        window.setTimeout(() => setState('idle'), 4000);
-      } else {
-        setState(orbStateForStage(event.stage));
-      }
+      setState(orbStateForStageEvent(event));
     });
     return unsub;
   }, []);
@@ -86,6 +94,11 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
   const activeGatewayTitle =
     NEXUS_GATEWAYS.find((g) => g.id === activeGateway)?.title ?? null;
 
+  // Phase A (v0.1.5): the orb's visual input (color / entropy / pulse)
+  // comes from the same state the footer shows — one mapping, no second
+  // source of truth. The renderer applies it to the shader orb.
+  const visual = orbVisualForState(state);
+
   return (
     <section aria-label="Nexus orb" style={styles.wrap} className="orb-panel">
       <div style={styles.contain} className="orb-canvas">
@@ -103,6 +116,7 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
               onNavigateExternal={(url) => window.open(url, '_blank', 'noopener')}
               onNavigateNewTab={(url) => window.open(url, '_blank', 'noopener')}
               onGatewaySelect={handleGatewaySelect}
+              visualInput={visual}
             />
           </ErrorBoundary>
         </Suspense>
@@ -138,7 +152,7 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
           the state text stays readable (2026-11-21 UI fix). */}
       <div style={styles.orbFooter}>
         <span style={styles.status} role="status">
-          <span style={{ ...styles.dot, background: stateColor(state) }} />
+          <span style={{ ...styles.dot, background: visual.color }} />
           <strong>{orbStateLabel(state)}</strong>
           {lastStage && <span style={styles.stage}> · last stage: {lastStage}</span>}
           {activeGatewayTitle && (
@@ -151,23 +165,6 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
       </div>
     </section>
   );
-}
-
-function stateColor(state: OrbActivityState): string {
-  switch (state) {
-    case 'blocked':
-      return '#ff5a5a';
-    case 'complete':
-      return '#3dff9e';
-    case 'thinking':
-    case 'planning':
-      return '#ffd166';
-    case 'executing':
-    case 'verifying':
-      return '#00e5ff';
-    default:
-      return '#8fa3b8';
-  }
 }
 
 function ErrorBoundary({
