@@ -104,7 +104,7 @@ test('v0.1.8 nodes: the legacy gateway identifiers are gone from src/', () => {
   assert.equal(read('src/experience/orb/vendor/constants.ts').includes('projects:'), false);
 });
 
-test('v0.1.8 nodes: all four labels visible at once — fixed front arc, no ring rotation', () => {
+test('v0.1.8 nodes: all four labels visible at once — fixed front arc, oscillation inside it (v0.1.9)', () => {
   // Pure geometry: every node sits on the camera side of the core.
   assert.deepEqual(NODE_ARC_ANGLES_DEG, [35, 70, 110, 145]);
   const positions = [0, 1, 2, 3].map((i) => nodePosition(i, NODE_RING_RADIUS));
@@ -114,9 +114,13 @@ test('v0.1.8 nodes: all four labels visible at once — fixed front arc, no ring
   }
   const xs = positions.map((p) => p.x);
   assert.ok(Math.min(...xs) < -5 && Math.max(...xs) > 5, 'nodes must spread across the view');
-  // The ring never rotates: no rotation increment on the gateway group.
+  // The ring never REVOLVES: v0.1.9 lets it oscillate ±20° inside the
+  // front arc (nodeOrbitOffset), but the rotation must be an absolute
+  // assignment from the scene clock — an increment (+=) would
+  // accumulate into a revolution and hide a label behind the sphere.
   const src = read(RENDERER);
-  assert.equal(src.includes('gatewayGroupRef.current.rotation.y +='), false, 'ring rotation must be gone');
+  assert.equal(src.includes('gatewayGroupRef.current.rotation.y +='), false, 'ring rotation must never accumulate');
+  assert.ok(src.includes('gatewayGroupRef.current.rotation.y = nodeOrbitOffset(elapsedTime);'), 'ring must take the absolute orbit offset');
   assert.ok(src.includes('nodePosition(i, gatewayRadius)'), 'nodes must be placed from node-layout');
   // Far-side fade is kept (it still applies if the user orbits the
   // camera around), but it can never trigger in the default view.

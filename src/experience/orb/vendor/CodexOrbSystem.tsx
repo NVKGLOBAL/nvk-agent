@@ -44,7 +44,8 @@ import type { AgentNode } from './types';
 import type { OrbVisualInput } from '../orb-state';
 import { OrbMode, ParticleBackgroundMode } from './osTypes';
 import { audio } from './audio';
-import { nodePosition } from '../node-layout';
+import { nodePosition, nodeOrbitOffset } from '../node-layout';
+import { flareIntensityAfter, haloOpacityFor, haloSizeFor } from '../orb-life';
 
 // OS shader factors (NVK-AI-OS defaults). The OS file exposes these as
 // props; this app has no UI to change them, so they live here as
@@ -130,6 +131,10 @@ const fragmentShader = `
   uniform float uGridFactor;
   uniform float uScanlineFactor;
   uniform float uHover;
+  // v0.1.9: flare — white-hot pulse fired by a real pipeline
+  // completion (orb-life.ts). 0.0 at rest, 1.0 on a fresh completion,
+  // decaying exponentially in the animation loop. Never timer-driven.
+  uniform float uFlare;
   varying vec3 vNormal;
   varying vec3 vLocalPosition;
   
@@ -207,6 +212,13 @@ const fragmentShader = `
     vec3 hoverShift = mix(entropyShift, hoverCyan, uHover * 0.85);
     
     vec3 lighting = hoverShift * glowFactor * flicker * (1.1 + uEntropy * 0.6 + uHover * 0.5);
+
+    // v0.1.9: flare — at full flare the orb reads white-hot with a
+    // strong blue glow, then settles back to the state color as
+    // uFlare decays. The mix is toward white, never toward a canned
+    // color: the state color is what returns.
+    vec3 flareWhite = vec3(0.85, 0.95, 1.0);
+    lighting = mix(lighting, flareWhite * (glowFactor + 0.8), uFlare * 0.75);
     
     // Alpha transparency channel: high transparency on centers, high opacity on rim glow and torus tracks
     float alphaVal = clamp(
@@ -235,6 +247,14 @@ interface CodexOrbSystemProps {
    * (orb-state.ts); this file only applies it to the shader orb.
    */
   visualInput?: OrbVisualInput;
+  /**
+   * v0.1.9: flare signal — a monotonically increasing count of real
+   * pipeline completions, owned by the host (OrbHost). Each increment
+   * is one flare pulse: the animation loop turns the edge into an
+   * intensity of 1.0 and decays it exponentially. The signal is an
+   * event edge, not a state, and it is never driven by a timer.
+   */
+  flareSignal?: number;
   /** OS orb mode. Default HolographicCore — the shader orb that shows the state colors. No mode-selector UI yet; the prop is the seam for one. */
   orbMode?: OrbMode;
   /** OS particle mode. Default Galaxy — the closest to the v0.1.4 galaxy look. */
@@ -245,7 +265,7 @@ interface CodexOrbSystemProps {
   onRendererError?: (hasError: boolean) => void;
 }
 
-const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: number }> = ({ onGatewaySelect, visualInput, orbMode = OrbMode.HolographicCore, particleMode = ParticleBackgroundMode.Galaxy, photoSources = [], onRendererError, nodeAnimationSpeed = 1.0 }) => {
+const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: number }> = ({ onGatewaySelect, visualInput, flareSignal = 0, orbMode = OrbMode.HolographicCore, particleMode = ParticleBackgroundMode.Galaxy, photoSources = [], onRendererError, nodeAnimationSpeed = 1.0 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const intersectedRef = useRef<THREE.Object3D | null>(null);
@@ -274,6 +294,16 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
   onGatewaySelectRef.current = onGatewaySelect;
   const visualInputRef = useRef(visualInput);
   visualInputRef.current = visualInput;
+  // v0.1.9: flare state. flareSignalRef mirrors the host's completion
+  // count; lastFlareSignalRef remembers the count the loop has already
+  // fired on; flareIntensityRef is the decaying intensity (1.0 on a
+  // fresh completion, exponential decay in real seconds). haloRef is
+  // the halo Points object, built in the particle effect below.
+  const flareSignalRef = useRef(flareSignal);
+  flareSignalRef.current = flareSignal;
+  const lastFlareSignalRef = useRef(flareSignal);
+  const flareIntensityRef = useRef(0);
+  const haloRef = useRef<THREE.Points | null>(null);
   const onRendererErrorRef = useRef(onRendererError);
   onRendererErrorRef.current = onRendererError;
 
@@ -321,6 +351,9 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
 
     // Cleanup function to remove old particles
     const cleanupParticles = () => {
+      // v0.1.9: the halo lives in this group too — drop the ref when
+      // its Points object is removed.
+      haloRef.current = null;
       while(group.children.length > 0) {
         const child = group.children[0];
         group.remove(child);
@@ -544,6 +577,53 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
       default:
         // Already cleaned up
         break;
+    }
+
+    // v0.1.9: halo — the WebSim original's green/cyan particle shell
+    // hugging the core. It is built in THIS particle effect, in the
+    // SAME group as the mode particles (same cleanup, same
+    // vertex-color post-processing below) — an added layer of the one
+    // particle system, not a second system. Shell radius 5.5–7.0:
+    // just outside the core (radius 5), inside the node ring
+    // (radius 12). Added AFTER the mode particles so children[0]
+    // stays the mode particles the animation loop addresses.
+    // Per-particle colors are brightness texture only (0.75–1.0
+    // white): the per-frame state color multiplies them, so the halo
+    // IS the state color at every brightness. The green/cyan of the
+    // original is the idle look — idle IS cyan, and the Galaxy disc
+    // beside it is green.
+    {
+      const haloCount = IS_MOBILE ? 250 : 600;
+      const haloGeometry = new THREE.BufferGeometry();
+      const haloPositions = new Float32Array(haloCount * 3);
+      const haloColors = new Float32Array(haloCount * 3);
+      for (let i = 0; i < haloCount; i++) {
+        const theta = Math.random() * 2 * Math.PI;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 5.5 + Math.random() * 1.5;
+        haloPositions[i*3] = r * Math.sin(phi) * Math.cos(theta);
+        haloPositions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+        haloPositions[i*3+2] = r * Math.cos(phi);
+        const b = 0.75 + Math.random() * 0.25;
+        haloColors[i*3] = b;
+        haloColors[i*3+1] = b;
+        haloColors[i*3+2] = b;
+      }
+      haloGeometry.setAttribute('position', new THREE.BufferAttribute(haloPositions, 3));
+      haloGeometry.setAttribute('color', new THREE.BufferAttribute(haloColors, 3));
+      const haloMaterial = new THREE.PointsMaterial({
+        color: 0x1ab3ff,
+        size: 0.07,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.75,
+        depthWrite: false,
+        vertexColors: true,
+      });
+      const halo = new THREE.Points(haloGeometry, haloMaterial);
+      halo.userData.isHalo = true;
+      haloRef.current = halo;
+      group.add(halo);
     }
 
     // Ensure all background particle systems have a color attribute for dynamic multi-spectral color changes
@@ -781,7 +861,10 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
         uFlowFactor: { value: FLOW_FACTOR },
         uGridFactor: { value: GRID_FACTOR },
         uScanlineFactor: { value: SCANLINE_FACTOR },
-        uHover: { value: 0.0 }
+        uHover: { value: 0.0 },
+        // v0.1.9: flare intensity. Set from flareIntensityRef in the
+        // animation loop; 0.0 at rest.
+        uFlare: { value: 0 }
       }, 
       blending: THREE.AdditiveBlending, 
       transparent: true 
@@ -1104,6 +1187,21 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
                 clickWobbleVelRef.current = 0;
             }
 
+            // v0.1.9: flare — fired ONLY by a real pipeline completion.
+            // The host increments flareSignal once per 'result' stage
+            // event; the loop turns the signal edge into an intensity
+            // of 1.0 and decays it exponentially in REAL seconds
+            // (delta, not dtSim). No timer: the decay is a function
+            // of the frame delta, like the click-impulse spring above,
+            // and the orb STATE never moves on decay — only the glow.
+            const flareSignalNow = flareSignalRef.current ?? 0;
+            if (flareSignalNow !== lastFlareSignalRef.current) {
+              lastFlareSignalRef.current = flareSignalNow;
+              flareIntensityRef.current = 1.0;
+            }
+            flareIntensityRef.current = flareIntensityAfter(flareIntensityRef.current, delta);
+            const flare = flareIntensityRef.current;
+
             if (orb.material instanceof THREE.ShaderMaterial) {
               // Phase A/B: the ONLY driver is the host's OrbVisualInput
               // (one color/entropy/pulse per real pipeline state). The
@@ -1131,15 +1229,31 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
               if (orb.material.uniforms.uHover) {
                 orb.material.uniforms.uHover.value += (targetHover - orb.material.uniforms.uHover.value) * 0.2 * dtSim;
               }
+              // v0.1.9: flare intensity into the shader (see the
+              // fragment shader's uFlare mix — white-hot at 1.0).
+              if (orb.material.uniforms.uFlare) {
+                orb.material.uniforms.uFlare.value = flare;
+              }
             }
             
             let basePulseScale = 1 + Math.sin(elapsedTime * pulseSpeed * 2) * 0.05 * pulseIntensity;
-            const finalCoreScale = (basePulseScale + clickScaleImpulseRef.current) * hoverScaleRef.current;
+            // v0.1.9: the core swells slightly on a flare (the
+            // original's white-hot ball), then settles with the decay.
+            const finalCoreScale = (basePulseScale + clickScaleImpulseRef.current + flare * 0.12) * hoverScaleRef.current;
             orb.scale.setScalar(finalCoreScale);
             if (modeObjectsRef.current) {
                modeObjectsRef.current.scale.setScalar(finalCoreScale);
             }
         
+        // v0.1.9: auto-orbit — the node ring drifts gently inside the
+        // front arc (node-layout.ts: ±20° oscillation, never a
+        // revolution). ABSOLUTE assignment from the scene clock, not
+        // an increment, so the arc can never wind around the sphere
+        // and hide a label. All four labels stay visible at once.
+        if (gatewayGroupRef.current) {
+          gatewayGroupRef.current.rotation.y = nodeOrbitOffset(elapsedTime);
+        }
+
         // --- Particle Background Animations ---
         const backgroundGroup = backgroundParticlesGroupRef.current;
         switch (particleMode) {
@@ -1265,6 +1379,25 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
             }
             break;
           }
+        }
+
+        // v0.1.9: halo — the particle shell hugging the core (built
+        // in the particle effect above). Its color is the REAL orb
+        // state, lerped like the orb's uColor (same target color, same
+        // rate); its opacity/size breathe with entropy and brighten
+        // on a flare; its slow self-rotation is relative drift inside
+        // the group's own motion. No canned animation: every input
+        // (state color, entropy, flare) comes from a real pipeline
+        // event or the state it produced.
+        const halo = haloRef.current;
+        if (halo) {
+          const haloMat = halo.material as THREE.PointsMaterial;
+          const haloTarget = new THREE.Color(visual?.color ?? '#1ab3ff');
+          haloMat.color.lerp(haloTarget, 0.1 * dtSim);
+          haloMat.opacity = haloOpacityFor(entropyValue, flare);
+          haloMat.size = haloSizeFor(entropyValue, flare);
+          halo.rotation.y += 0.0004 * (1 + entropyValue) * speedRef.current * dtSim;
+          halo.scale.setScalar(1 + flare * 0.1);
         }
 
         // Mode specific animations

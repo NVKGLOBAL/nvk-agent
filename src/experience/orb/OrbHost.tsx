@@ -38,6 +38,7 @@ import {
   orbVisualForState,
   OrbActivityState,
 } from './orb-state';
+import { shouldFlareOnStageEvent } from './orb-life';
 import { NVK_AGENT_NODES } from './vendor/constants';
 
 const CodexOrbSystem = lazy(() => import('./vendor/CodexOrbSystem'));
@@ -52,6 +53,12 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
   const [lastStage, setLastStage] = useState<PipelineStage | null>(null);
   const [orbFailed, setOrbFailed] = useState(false);
   const [activeGateway, setActiveGateway] = useState<string | null>(null);
+  // v0.1.9: flare signal — a monotonically increasing count of real
+  // pipeline completions. The renderer turns each increment into one
+  // flare pulse that decays in its animation loop. It is an event
+  // edge, not a state: it never moves the orb state, and it is never
+  // driven by a timer.
+  const [flareSignal, setFlareSignal] = useState(0);
 
   // Phase A (v0.1.5): the ONLY thing that moves the orb is a real stage
   // event. The 4-second return-to-idle timeout that lived here in v0.1.4
@@ -63,6 +70,11 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
     const unsub = subscribeToStages((event) => {
       setLastStage(event.stage);
       setState(orbStateForStageEvent(event));
+      // v0.1.9: a real pipeline completion fires the orb flare
+      // (orb-life.ts). One increment per 'result' stage event.
+      if (shouldFlareOnStageEvent(event)) {
+        setFlareSignal((n) => n + 1);
+      }
     });
     return unsub;
   }, []);
@@ -100,6 +112,7 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
             <CodexOrbSystem
               onGatewaySelect={handleGatewaySelect}
               visualInput={visual}
+              flareSignal={flareSignal}
             />
           </ErrorBoundary>
         </Suspense>

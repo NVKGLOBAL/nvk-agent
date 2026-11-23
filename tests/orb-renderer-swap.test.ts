@@ -299,8 +299,8 @@ test('renderer swap: CodexModes presets are valid — and not wired to any UI ye
   assert.deepEqual(hits, [], `CodexModes must not be imported outside its own file yet: ${hits.join('; ')}`);
 });
 
-test('renderer swap: version is 0.1.8', () => {
+test('renderer swap: version is 0.1.9', () => {
   const pkg = JSON.parse(read('package.json')) as { version: string };
-  assert.equal(pkg.version, '0.1.8');
-  assert.ok(read('src/App.tsx').includes('NVK Agent v0.1.8'));
+  assert.equal(pkg.version, '0.1.9');
+  assert.ok(read('src/App.tsx').includes('NVK Agent v0.1.9'));
 });
