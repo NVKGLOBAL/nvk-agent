@@ -202,6 +202,19 @@ export class MemoryStore {
         .filter((k) => k.startsWith(LS_PREFIX))
         .forEach((k) => localStorage.removeItem(k));
     }
+    // v0.1.8: the model weights do NOT live in IndexedDB or
+    // localStorage — they live in the Cache API store 'transformers-cache'
+    // (see inference.ts isModelWeightsCached), which clearAll() never
+    // touched. That is why "Clear all local data" left ~466.8 MB of
+    // weights behind (retest #4 / nav-UX diagnosis G1). Delete the
+    // app's own model cache; no other cache is touched.
+    if (typeof caches !== 'undefined') {
+      try {
+        await caches.delete('transformers-cache');
+      } catch {
+        /* ignore */
+      }
+    }
   }
 }
 

@@ -4,7 +4,7 @@
  * NVK Agent — the only stylesheet in the app. Everything else is inline.
  *
  * Why this file exists (2026-11-21 UI fix): the vendored orb components
- * (CodexOrbSystem, ParticleBackground, ProjectViewer) are styled entirely
+ * (CodexOrbSystem, ParticleBackground) are styled entirely
  * with Tailwind utility classes, but the scaffold never shipped Tailwind —
  * so every one of those classes was a no-op. Both WebGL canvases sat in
  * normal flow, stacked vertically, each window-sized; the 520px panel only
@@ -71,12 +71,17 @@
 /*
  * Orb panel height: compact on phones so the first screen still explains
  * the app and reaches the chat; roomier on desktop.
+ * v0.1.8: desktop 520px → 420px. Retest #4 found the example prompts
+ * ("Try it — tap a question") and the 4th capability card below the
+ * fold at 1920x1000; the shorter panel brings the whole hero onto the
+ * first screen. The scene itself was reframed (tilted camera) so the
+ * shorter panel still reads as a full orb view, not a band over black.
  */
 .orb-canvas {
   height: 340px;
 }
 @media (min-width: 700px) {
   .orb-canvas {
-    height: 520px;
+    height: 420px;
   }
 }

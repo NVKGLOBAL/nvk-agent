@@ -11,12 +11,18 @@
  * positioning resolve against this section instead of the viewport — the
  * original file is untouched.
  *
- * v0.1.4: DOM gateway controls. The four gateways exist as spheres inside
+ * v0.1.4: DOM node controls. The four nodes exist as spheres inside
  * the canvas and are clickable there (raycast, canvas-relative coordinates
  * — see CodexOrbSystem), but a canvas is not a reliable control surface
- * on its own: this host also renders the same four gateways as real
+ * on its own: this host also renders the same four nodes as real
  * buttons under the canvas, each navigating to its panel and updating
  * the footer status. No dead controls.
+ *
+ * v0.1.8: the nodes are Agents / Evidence / Diagnostics / System —
+ * the Agent's own management and system surfaces. The legacy Nexus
+ * gateways (Vision / Codex / Nexus / Lore) and their MythoTech project
+ * lists were removed on the owner's direction; each node carries the
+ * panel it opens, so the host no longer maps legacy view names.
  *
  * v0.1.5 (Phase A — state discipline): the orb's visual input (color /
  * entropy / pulse, from orb-state.ts) is passed into the renderer as
@@ -32,21 +38,14 @@ import {
   orbVisualForState,
   OrbActivityState,
 } from './orb-state';
-import { NEXUS_GATEWAYS } from './vendor/constants';
+import { NVK_AGENT_NODES } from './vendor/constants';
 
 const CodexOrbSystem = lazy(() => import('./vendor/CodexOrbSystem'));
 
-export type OrbPanel = 'chat' | 'visualizers' | 'diagnostics' | 'settings' | 'agents';
+export type OrbPanel = 'chat' | 'visualizers' | 'diagnostics' | 'settings' | 'agents' | 'evidence';
 
-// Gateway → orb view → app panel. The orb's own project map sends each
-// gateway's projects to real pages; here each gateway opens the panel that
-// best represents it in THIS app (the orb IS the organization system).
-const GATEWAY_VIEW: Record<string, string> = {
-  vision: 'codexOrbSystem', // chat — the Vision is the entry point
-  codex: 'omegaLogicCore', // visualizers — the living intelligence
-  nexus: 'agentCommandCenter', // agents — the wider ecosystem
-  lore: 'reasoningNexus', // diagnostics — the foundational research
-};
+// Node → panel. Each node in NVK_AGENT_NODES carries the panel it
+// opens; there is no legacy view-name mapping anymore (v0.1.8).
 
 export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void }) {
   const [state, setState] = useState<OrbActivityState>('idle');
@@ -68,31 +67,18 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
     return unsub;
   }, []);
 
-  // Gateway views from the original orb map to real panels in this app.
-  // Views with no counterpart are reported, not silently swallowed.
-  const handleNavigate = (view: string) => {
-    const map: Record<string, OrbPanel> = {
-      codexOrbSystem: 'chat',
-      agentCommandCenter: 'agents',
-      reasoningNexus: 'diagnostics',
-      omegaLogicCore: 'visualizers',
-      nexusIntegrationSOP: 'settings',
-    };
-    const panel = map[view];
-    if (panel) onNavigate(panel);
-    else onNavigate('chat');
-  };
-
-  // One entry point for gateway selection — used by BOTH the canvas
+  // One entry point for node selection — used by BOTH the canvas
   // click (via onGatewaySelect) and the DOM buttons below, so the two
-  // control surfaces can never drift apart.
-  const handleGatewaySelect = (gatewayId: string) => {
-    setActiveGateway(gatewayId);
-    handleNavigate(GATEWAY_VIEW[gatewayId] ?? 'codexOrbSystem');
+  // control surfaces can never drift apart. The node carries its panel.
+  const handleGatewaySelect = (nodeId: string) => {
+    const node = NVK_AGENT_NODES.find((n) => n.id === nodeId);
+    if (!node) return;
+    setActiveGateway(node.id);
+    onNavigate(node.panel);
   };
 
   const activeGatewayTitle =
-    NEXUS_GATEWAYS.find((g) => g.id === activeGateway)?.title ?? null;
+    NVK_AGENT_NODES.find((g) => g.id === activeGateway)?.title ?? null;
 
   // Phase A (v0.1.5): the orb's visual input (color / entropy / pulse)
   // comes from the same state the footer shows — one mapping, no second
@@ -112,9 +98,6 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
         >
           <ErrorBoundary onError={() => setOrbFailed(true)}>
             <CodexOrbSystem
-              onNavigate={(view) => handleNavigate(view)}
-              onNavigateExternal={(url) => window.open(url, '_blank', 'noopener')}
-              onNavigateNewTab={(url) => window.open(url, '_blank', 'noopener')}
               onGatewaySelect={handleGatewaySelect}
               visualInput={visual}
             />
@@ -127,12 +110,13 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
           not the intelligence.
         </div>
       )}
-      {/* DOM gateway controls (v0.1.4): the same four gateways as real
-          buttons, so the orb works as an organization system even when the
-          canvas is not clickable (touch, keyboard, screen reader). Each
-          button navigates to its panel and marks itself active. */}
-      <div style={styles.gatewayRow} role="group" aria-label="Gateway nodes">
-        {NEXUS_GATEWAYS.map((gateway) => (
+      {/* DOM node controls (v0.1.4, nodes rebuilt v0.1.8): the same four
+          nodes as real buttons, so the orb works as an organization
+          system even when the canvas is not clickable (touch, keyboard,
+          screen reader). Each button navigates to its panel and marks
+          itself active. */}
+      <div style={styles.gatewayRow} role="group" aria-label="System nodes">
+        {NVK_AGENT_NODES.map((gateway) => (
           <button
             key={gateway.id}
             type="button"
@@ -156,7 +140,7 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
           <strong>{orbStateLabel(state)}</strong>
           {lastStage && <span style={styles.stage}> · last stage: {lastStage}</span>}
           {activeGatewayTitle && (
-            <span style={styles.stage}> · Gateway: {activeGatewayTitle}</span>
+            <span style={styles.stage}> · Node: {activeGatewayTitle}</span>
           )}
         </span>
         <span style={styles.note}>

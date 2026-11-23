@@ -42,10 +42,17 @@ export interface ProjectCard {
   openInNewTab?: boolean;
 }
 
-export interface NexusGateway {
-  id: 'vision' | 'codex' | 'nexus' | 'lore';
+/**
+ * v0.1.8 (2026-11-22): the orb's nodes are the Agent's own management
+ * and system surfaces — NOT the legacy Nexus gateways (Vision / Codex /
+ * Nexus / Lore) that were removed with their MythoTech project lists.
+ * Each node opens a real panel that exists in this app. No node may
+ * point at a page, project, or capability that does not exist.
+ */
+export interface AgentNode {
+  id: 'agents' | 'evidence' | 'diagnostics' | 'system';
   title: string;
   description: string;
-  icon: string;
-  projects: string[]; // Keys from allProjects
+  /** The app panel this node opens (OrbPanel in OrbHost.tsx). */
+  panel: 'agents' | 'evidence' | 'diagnostics' | 'settings';
 }

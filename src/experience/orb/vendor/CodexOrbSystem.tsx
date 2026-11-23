@@ -17,9 +17,19 @@
  * 7-state vocabulary, SystemContext entropy, voice, flight/omniwheel
  * navigation, axiom nodes, cluster/panel system, sub-agent
  * constellation and thought glyphs are NOT ported (Phase C or never);
- * the Agent's 4 gateways are the orbiting nodes; listeners are scoped
- * to the canvas, not the window; the HUD uses text labels, not the
- * Remix Icon font this app does not ship.
+ * the Agent's 4 system nodes are the orbiting nodes; listeners are
+ * scoped to the canvas, not the window; the HUD uses text labels, not
+ * the Remix Icon font this app does not ship.
+ *
+ * v0.1.8 (2026-11-22): the 4 legacy Nexus gateway nodes (Vision /
+ * Codex / Nexus / Lore, with their MythoTech project lists and the
+ * ProjectViewer modal they opened) were removed on the owner's
+ * direction and replaced with the Agent's own nodes — Agents, Evidence,
+ * Diagnostics, System — each opening a real panel. The camera starts
+ * tilted (0, 10, 22) so the galaxy disk and node ring fill the frame
+ * instead of reading as a band over empty black (retest #4), and the
+ * node ring no longer rotates: the nodes sit in a fixed front arc
+ * (see node-layout.ts) so all four labels are visible at once.
  */
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
@@ -29,12 +39,12 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 import { gsap } from 'gsap';
-import { NEXUS_GATEWAYS } from './constants';
-import type { PortalAnimationType, ActiveView, NexusGateway } from './types';
+import { NVK_AGENT_NODES } from './constants';
+import type { AgentNode } from './types';
 import type { OrbVisualInput } from '../orb-state';
 import { OrbMode, ParticleBackgroundMode } from './osTypes';
 import { audio } from './audio';
-import ProjectViewer from './ProjectViewer';
+import { nodePosition } from '../node-layout';
 
 // OS shader factors (NVK-AI-OS defaults). The OS file exposes these as
 // props; this app has no UI to change them, so they live here as
@@ -217,10 +227,7 @@ const fragmentShader = `
 `;
 
 interface CodexOrbSystemProps {
-  onNavigate: (view: ActiveView, animationType: PortalAnimationType) => void;
-  onNavigateExternal: (url: string, animationType: PortalAnimationType) => void;
-  onNavigateNewTab: (url: string, animationType: PortalAnimationType) => void;
-  /** Reports a clicked gateway to the host (DOM gateway controls + status). */
+  /** Reports a clicked node to the host (DOM node controls + status). */
   onGatewaySelect?: (gatewayId: string) => void;
   /**
    * Phase A: the orb's visual input (color / entropy / pulse) for the
@@ -238,7 +245,7 @@ interface CodexOrbSystemProps {
   onRendererError?: (hasError: boolean) => void;
 }
 
-const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: number }> = ({ onNavigate, onNavigateExternal, onNavigateNewTab, onGatewaySelect, visualInput, orbMode = OrbMode.HolographicCore, particleMode = ParticleBackgroundMode.Galaxy, photoSources = [], onRendererError, nodeAnimationSpeed = 1.0 }) => {
+const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: number }> = ({ onGatewaySelect, visualInput, orbMode = OrbMode.HolographicCore, particleMode = ParticleBackgroundMode.Galaxy, photoSources = [], onRendererError, nodeAnimationSpeed = 1.0 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const intersectedRef = useRef<THREE.Object3D | null>(null);
@@ -256,7 +263,9 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
   const clickWobbleVelRef = useRef(0.0);
   const [rendererError, setRendererError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const [selectedGateway, setSelectedGateway] = useState<NexusGateway | null>(null);
+  // v0.1.8: no selected-node modal. Tapping a node navigates to its
+  // panel via onGatewaySelect (host); the legacy ProjectViewer modal
+  // that opened the old gateway project lists is deleted.
 
   // Keep callbacks + the visual input in refs — the three.js effects
   // must not re-init when the parent re-renders with new identities.
@@ -583,7 +592,12 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
     sceneRef.current = scene;
     const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
     cameraRef.current = camera;
-    camera.position.z = 25;
+    // v0.1.8: start tilted (0, 10, 22) instead of flat (0, 0, 25).
+    // Viewed edge-on, the galaxy disk and node ring are a thin band
+    // across the middle and the bottom ~40% of the panel is empty
+    // black (retest #4). Tilted, the disk and ring read as an ellipse
+    // and fill the frame. resetView returns to this same position.
+    camera.position.set(0, 10, 22);
     
     let renderer: THREE.WebGLRenderer;
     try {
@@ -780,16 +794,18 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
     scene.add(modeObjectsRef.current);
     scene.add(backgroundParticlesGroupRef.current);
 
-    // Gateway ring (Agent, v0.1.6 Phase B): the 4 Nexus gateways orbit
-    // the core — they are this app's organization system. The OS file's
-    // orbiting nodes are its axiom nodes (OS-lore labels, no function)
-    // and its cluster/panel nodes (Phase C, not ported); neither is
-    // ported. Node sizes are scaled to the OS scene (core radius 5,
-    // camera z=25): sphere 1.5, ring radius 12, labels 6x1.5.
+    // Node ring (Agent, v0.1.8): the 4 system nodes (Agents, Evidence,
+    // Diagnostics, System) are this app's organization system. They sit
+    // in a FIXED front arc (node-layout.ts) — every node is on the
+    // camera side of the core, so all four labels are visible at once.
+    // The ring never rotates (retest #4: rotation + far-side fade hid
+    // one node behind the sphere at all times). Node sizes are scaled
+    // to the OS scene (core radius 5, camera z=25): sphere 1.5, ring
+    // radius 12, labels 6x1.5.
     const gatewayGroup = new THREE.Group();
     gatewayGroupRef.current = gatewayGroup;
 
-    const createGatewayNode = (gateway: NexusGateway) => {
+    const createGatewayNode = (gateway: AgentNode) => {
         const group = new THREE.Group();
         group.userData = { id: gateway.id, type: 'gateway' };
 
@@ -827,13 +843,13 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
     };
 
     const gatewayRadius = 12;
-    NEXUS_GATEWAYS.forEach((gateway, i) => {
-        const angle = (i / NEXUS_GATEWAYS.length) * Math.PI * 2;
+    NVK_AGENT_NODES.forEach((gateway, i) => {
+        const pos = nodePosition(i, gatewayRadius);
         const node = createGatewayNode(gateway);
-        node.position.set(Math.cos(angle) * gatewayRadius, 0, Math.sin(angle) * gatewayRadius);
+        node.position.set(pos.x, pos.y, pos.z);
 
         // Connector line to center
-        const points = [new THREE.Vector3(0,0,0), new THREE.Vector3(Math.cos(angle)*gatewayRadius, 0, Math.sin(angle)*gatewayRadius)];
+        const points = [new THREE.Vector3(0,0,0), new THREE.Vector3(pos.x, 0, pos.z)];
         const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
         const lineMat = new THREE.LineBasicMaterial({ color: 0x00A4FF, transparent: true, opacity: 0.1 });
         const line = new THREE.Line(lineGeo, lineMat);
@@ -954,9 +970,8 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
             }
         } else if (targetObj && targetObj.userData?.type === 'gateway') {
             audio.nexusOrbClick();
-            const gateway = NEXUS_GATEWAYS.find(g => g.id === targetObj.userData.id);
+            const gateway = NVK_AGENT_NODES.find(g => g.id === targetObj.userData.id);
             if (gateway) {
-                setSelectedGateway(gateway);
                 onGatewaySelectRef.current?.(gateway.id);
             }
         }
@@ -1346,12 +1361,14 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
                 break;
         }
 
-        // Gateway ring (Agent): the 4 gateways orbit the core. Idle
-        // drift only — drag orbits the CAMERA (OrbitControls), not the
-        // ring. Labels fade on the far side (v0.1.4: a far-side label
-        // renders through the additive orb) and scale up on hover.
+        // Node ring (Agent, v0.1.8): the nodes sit in a fixed front arc
+        // — the ring NEVER rotates, so all four labels stay visible.
+        // Drag orbits the CAMERA (OrbitControls), not the ring. Labels
+        // fade on the far side (v0.1.4: a far-side label renders through
+        // the additive orb) and scale up on hover; with the fixed front
+        // arc the fade never triggers in the default view, and still
+        // applies if the user orbits the camera around.
         if (gatewayGroupRef.current) {
-            gatewayGroupRef.current.rotation.y += 0.001 * dtSim;
             gatewayGroupRef.current.children.forEach((child) => {
                 if (child instanceof THREE.Group && child.userData.type === 'gateway') {
                     child.children.forEach((c) => {
@@ -2182,15 +2199,17 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
   // Camera controls for the HUD (OS): focus zooms to the OS file's focus
   // distance; reset returns to the default view. Zoom itself needs no
   // button — OrbitControls already zooms on wheel/pinch.
+  // v0.1.8: both keep the tilted default view (0, 10, 22) — focus
+  // zooms in along the same tilt instead of flattening it.
   const focusOrb = () => {
     if (cameraRef.current && controlsRef.current) {
-      gsap.to(cameraRef.current.position, { x: 0, y: 0, z: 14, duration: 1, ease: 'power2.inOut' });
+      gsap.to(cameraRef.current.position, { x: 0, y: 4, z: 14, duration: 1, ease: 'power2.inOut' });
       gsap.to(controlsRef.current.target, { x: 0, y: 0, z: 0, duration: 1, ease: 'power2.inOut', onUpdate: () => controlsRef.current?.update() });
     }
   };
   const resetView = () => {
     if (cameraRef.current && controlsRef.current) {
-      gsap.to(cameraRef.current.position, { x: 0, y: 0, z: 25, duration: 1, ease: 'power2.inOut' });
+      gsap.to(cameraRef.current.position, { x: 0, y: 10, z: 22, duration: 1, ease: 'power2.inOut' });
       gsap.to(controlsRef.current.target, { x: 0, y: 0, z: 0, duration: 1, ease: 'power2.inOut', onUpdate: () => controlsRef.current?.update() });
     }
   };
@@ -2247,21 +2266,10 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
         </button>
       </div>
 
-      {!selectedGateway && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 text-center pointer-events-none">
-          <h1 className="text-4xl font-serif-elegant tracking-wider text-white/90 animate-pulseText">NVK</h1>
-          <p className="text-cyan-300/70 mt-2">Select a Gateway Node</p>
-        </div>
-      )}
-
-      {selectedGateway && (
-        <ProjectViewer
-          gateway={selectedGateway}
-          onClose={() => setSelectedGateway(null)}
-          onNavigate={onNavigate}
-          onNavigateExternal={onNavigateExternal}
-        />
-      )}
+      <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 text-center pointer-events-none">
+        <h1 className="text-4xl font-serif-elegant tracking-wider text-white/90 animate-pulseText">NVK</h1>
+        <p className="text-cyan-300/70 mt-2">Select a system node</p>
+      </div>
     </>
   );
 };

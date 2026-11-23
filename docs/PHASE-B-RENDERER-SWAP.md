@@ -1,6 +1,12 @@
 # Phase B — Orb Renderer Swap (v0.1.6)
 
 **Date:** 2026-11-22. **Status: BUILT + VERIFIED. NOT deployed, NOT pushed.**
+**Superseded in part by v0.1.8** (`docs/V0.1.8-NODE-REBUILD.md`): the
+gateway section below (S-A gateway ring, S-B tap handler, S-M gateway
+animation, DOM gateway buttons) describes the legacy Nexus gateways
+that v0.1.8 removed and replaced with Agents / Evidence / Diagnostics /
+System nodes. The renderer-swap facts (shaders, modes, particles,
+OrbVisualInput seam) still hold.
 **Source:** NVKGLOBAL/NVK-AI-OS @ `b723bc4d9` (2026-09-21), public repo.
 **Source snapshot (durable):** `~/workspace/nvk-unified/orb-port-source/`
 (`CodexOrbSystem.tsx` 139,293 B / 3,166 lines, `CodexModes.ts` 12,334 B,

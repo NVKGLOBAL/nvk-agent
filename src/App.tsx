@@ -4,6 +4,7 @@ import { Chat } from './experience/chat/Chat';
 import { SettingsPanel } from './experience/chat/SettingsPanel';
 import { DiagnosticsPanel } from './experience/chat/DiagnosticsPanel';
 import { AgentsPanel } from './experience/chat/AgentsPanel';
+import { EvidencePanel } from './experience/chat/EvidencePanel';
 import { VisualizersPanel } from './experience/visualizers/VisualizersPanel';
 import { HERO_CAPABILITIES, EXAMPLE_PROMPTS } from './experience/hero-content';
 
@@ -11,6 +12,7 @@ const TABS: { id: OrbPanel; label: string }[] = [
   { id: 'chat', label: 'Chat' },
   { id: 'visualizers', label: 'Visualizations' },
   { id: 'agents', label: 'Agents' },
+  { id: 'evidence', label: 'Evidence' },
   { id: 'diagnostics', label: 'Diagnostics' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -86,13 +88,14 @@ export default function App() {
           {panel === 'chat' && <Chat prefill={chatPrefill} />}
           {panel === 'visualizers' && <VisualizersPanel />}
           {panel === 'agents' && <AgentsPanel />}
+          {panel === 'evidence' && <EvidencePanel />}
           {panel === 'diagnostics' && <DiagnosticsPanel />}
           {panel === 'settings' && <SettingsPanel />}
         </div>
       </main>
 
       <footer style={styles.footer}>
-        NVK Agent v0.1.7 — local-first preview. Local inference first; cloud
+        NVK Agent v0.1.8 — local-first preview. Local inference first; cloud
         only by explicit opt-in. No capability is claimed without evidence —
         see Diagnostics → Capability matrix.
       </footer>

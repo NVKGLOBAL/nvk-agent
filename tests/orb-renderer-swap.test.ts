@@ -20,13 +20,19 @@
  * 5. Particles live IN-SCENE (the particle system is part of the
  *    composited output) — no separate <ParticleBackground/> layer.
  * 6. Gateway clicks use the canvas rect (window size only as a
- *    zero-size fallback), and the 4 DOM gateway buttons are kept.
+ *    zero-size fallback), and the 4 DOM node buttons are kept.
  * 7. ResizeObserver sizing, bounded camera, far-side label fade, and
  *    the shipped styling system (Tailwind + orb-panel rules).
  * 8. The model-download path is untouched by the renderer (separate
  *    browser diagnosis; the renderer imports nothing from intelligence).
  * 9. CodexModes presets are valid — and not wired to any UI yet.
- * 10. Version is 0.1.7.
+ * 10. Version is 0.1.8.
+ *
+ * v0.1.8 (node rebuild, 2026-11-22): the 4 legacy Nexus gateways
+ * (Vision / Codex / Nexus / Lore) are gone — replaced by the Agent's
+ * own nodes (Agents / Evidence / Diagnostics / System), each opening a
+ * real panel. The gateway test below now pins the new nodes; the
+ * ProjectViewer modal is deleted.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -43,7 +49,7 @@ import {
   CODEX_MODES_DEFINITIONS,
   getPresetsForCodexMode,
 } from '../src/experience/orb/vendor/CodexModes';
-import { NEXUS_GATEWAYS } from '../src/experience/orb/vendor/constants';
+import { NVK_AGENT_NODES } from '../src/experience/orb/vendor/constants';
 import { orbVisualForState } from '../src/experience/orb/orb-state';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -199,7 +205,7 @@ test('renderer swap: particles live in-scene — no separate particle layer unde
   assert.equal(host.includes('<ParticleBackground'), false, 'host must not mount a separate particle layer');
 });
 
-test('renderer swap: gateway clicks use the canvas rect; the 4 DOM gateway buttons are kept', () => {
+test('renderer swap: node clicks use the canvas rect; the 4 DOM node buttons are kept', () => {
   const src = read(RENDERER);
   // Mouse coordinates come from the canvas bounding rect (v0.1.4
   // lesson: window size squashed the phone render and broke raycasts).
@@ -214,19 +220,19 @@ test('renderer swap: gateway clicks use the canvas rect; the 4 DOM gateway butto
     }
   }
   // Listeners are scoped to the canvas, not the window (a window-level
-  // click listener raycast clicks on the DOM gateway buttons below the
+  // click listener raycast clicks on the DOM node buttons below the
   // canvas). The window resize listener is the only window listener.
   assert.equal((src.match(/window\.addEventListener/g) ?? []).length, 1);
   assert.ok(src.includes("window.addEventListener('resize', handleResize);"));
   assert.ok(src.includes("domElement.addEventListener('pointerdown', handlePointerDown);"));
-  // The 4 gateways are the orbiting nodes, and the host reports clicks.
-  assert.ok(src.includes('NEXUS_GATEWAYS'));
+  // The 4 nodes are the orbiting nodes, and the host reports clicks.
+  assert.ok(src.includes('NVK_AGENT_NODES'));
   assert.ok(src.includes('onGatewaySelectRef.current?.(gateway.id);'));
-  assert.deepEqual(NEXUS_GATEWAYS.map((g) => g.id), ['vision', 'codex', 'nexus', 'lore']);
-  // DOM buttons: the host renders the same four gateways as real
+  assert.deepEqual(NVK_AGENT_NODES.map((g) => g.id), ['agents', 'evidence', 'diagnostics', 'system']);
+  // DOM buttons: the host renders the same four nodes as real
   // buttons (retest #3 failure was canvas-only text).
   const host = read('src/experience/orb/OrbHost.tsx');
-  assert.ok(host.includes('{NEXUS_GATEWAYS.map((gateway) => ('));
+  assert.ok(host.includes('{NVK_AGENT_NODES.map((gateway) => ('));
   assert.ok(host.includes('<button'));
   assert.ok(host.includes('onClick={() => handleGatewaySelect(gateway.id)}'));
 });
@@ -245,7 +251,7 @@ test('renderer swap: ResizeObserver sizing, bounded camera, far-side label fade,
   assert.ok(css.includes('.orb-panel canvas {'));
   assert.ok(css.includes('.orb-canvas {'));
   assert.ok(css.includes('height: 340px;'), 'phone orb height');
-  assert.ok(css.includes('height: 520px;'), 'desktop orb height');
+  assert.ok(css.includes('height: 420px;'), 'desktop orb height (v0.1.8: 520px kept the prompts below the fold)');
   assert.ok(css.includes('.app-nav'), 'nav wraps instead of overflowing on phones');
 });
 
@@ -293,8 +299,8 @@ test('renderer swap: CodexModes presets are valid — and not wired to any UI ye
   assert.deepEqual(hits, [], `CodexModes must not be imported outside its own file yet: ${hits.join('; ')}`);
 });
 
-test('renderer swap: version is 0.1.7', () => {
+test('renderer swap: version is 0.1.8', () => {
   const pkg = JSON.parse(read('package.json')) as { version: string };
-  assert.equal(pkg.version, '0.1.7');
-  assert.ok(read('src/App.tsx').includes('NVK Agent v0.1.7'));
+  assert.equal(pkg.version, '0.1.8');
+  assert.ok(read('src/App.tsx').includes('NVK Agent v0.1.8'));
 });
