@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/*
+ * NVK Agent — the only stylesheet in the app. Everything else is inline.
+ *
+ * Why this file exists (2026-11-21 UI fix): the vendored orb components
+ * (CodexOrbSystem, ParticleBackground, ProjectViewer) are styled entirely
+ * with Tailwind utility classes, but the scaffold never shipped Tailwind —
+ * so every one of those classes was a no-op. Both WebGL canvases sat in
+ * normal flow, stacked vertically, each window-sized; the 520px panel only
+ * showed the top of the particle canvas, the orb canvas and the heading
+ * were clipped out of view entirely. Importing Tailwind here restores the
+ * layout those components were written for.
+ */
+
+/* Custom classes the vendored orb uses that Tailwind does not ship. */
+.font-serif-elegant {
+  font-family: Georgia, 'Times New Roman', serif;
+}
+@keyframes pulseText {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.animate-pulseText {
+  animation: pulseText 2.4s ease-in-out infinite;
+}
+
+/*
+ * The vendored orb + particle canvases are sized by three.js to the WINDOW,
+ * not to their panel — so even with layout restored, the galaxy disk (drawn
+ * at the centre of a viewport-tall canvas) sat as a strip near the bottom
+ * of the panel and the orb sat low instead of centred. Force both canvases
+ * to fill their (panel-sized) parents so the orb is centred in the panel
+ * and the particle galaxy fills the panel. !important beats the inline
+ * sizes three.js sets on every resize. Scoped to the orb section only, so
+ * the visualizer canvases elsewhere are untouched.
+ */
+.orb-panel canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/*
+ * Orb panel height: compact on phones so the first screen still explains
+ * the app and reaches the chat; roomier on desktop.
+ */
+.orb-canvas {
+  height: 340px;
+}
+@media (min-width: 700px) {
+  .orb-canvas {
+    height: 520px;
+  }
+}

@@ -5,7 +5,7 @@
  * demo-mode banner. When no model is loaded the input explains demo mode —
  * it never returns a fake reply.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { runPipeline, PipelineResult } from '../../intelligence/pipeline';
 import { localInferenceEngine, EngineState, isLowMemoryDevice } from '../../intelligence/inference';
 import { modelRegistry } from '../../intelligence/model-registry';
@@ -13,7 +13,7 @@ import { settingsStore } from '../../intelligence/settings';
 import { memoryStore, ConversationTurn } from '../../intelligence/memory';
 import { reverifyEvidence } from '../../sovereign/evidence';
 
-export function Chat() {
+export function Chat({ prefill }: { prefill?: { text: string; nonce: number } | null }) {
   const [input, setInput] = useState('');
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [engine, setEngine] = useState<EngineState>(localInferenceEngine.getState());
@@ -22,6 +22,7 @@ export function Chat() {
   const [verifyNote, setVerifyNote] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [downloadNote, setDownloadNote] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const un1 = localInferenceEngine.subscribe(() =>
@@ -30,6 +31,15 @@ export function Chat() {
     memoryStore.getConversation().then(setTurns);
     return un1;
   }, []);
+
+  // Hero example prompts drop their text here and bring the composer into
+  // view, so the first screen is a working entry to chat (2026-11-21 UI fix).
+  useEffect(() => {
+    if (!prefill) return;
+    setInput(prefill.text);
+    inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    inputRef.current?.focus({ preventScroll: true });
+  }, [prefill]);
 
   const settings = settingsStore.get();
   const demoMode = engine.status !== 'ready' && !settings.cloudEnabled;
@@ -67,6 +77,12 @@ export function Chat() {
     const res = await reverifyEvidence(lastResult.evidenceId);
     setVerifyNote(res.detail);
   }
+
+  // Empty turns are never rendered: the pre-fix engine stored empty agent
+  // replies, which persisted as broken-looking blank bubbles (2026-11-21).
+  // Storage is guarded too (memory.ts appendTurn), this covers the history
+  // already on the device.
+  const visibleTurns = turns.filter((t) => t.text.trim() !== '');
 
   return (
     <div style={styles.wrap}>
@@ -139,7 +155,7 @@ export function Chat() {
       )}
 
       <div style={styles.thread} aria-live="polite">
-        {turns.map((t, i) => (
+        {visibleTurns.map((t, i) => (
           <div key={i} style={t.role === 'user' ? styles.userTurn : styles.agentTurn}>
             <strong>{t.role === 'user' ? 'You' : 'NVK Agent'}</strong>
             <p style={styles.turnText}>{t.text}</p>
@@ -148,7 +164,7 @@ export function Chat() {
             )}
           </div>
         ))}
-        {turns.length === 0 && (
+        {visibleTurns.length === 0 && (
           <p style={styles.small}>
             No conversation yet. Ask something — or try the validation prompt:{' '}
             <em>What is 2+2? Answer in one word.</em>
@@ -158,6 +174,7 @@ export function Chat() {
 
       <div style={styles.composer}>
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && send()}

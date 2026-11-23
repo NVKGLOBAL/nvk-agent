@@ -114,6 +114,10 @@ export class MemoryStore {
   }
 
   async appendTurn(turn: ConversationTurn): Promise<void> {
+    // Empty turns are never stored: the pre-fix engine produced empty agent
+    // replies that persisted as broken-looking blank bubbles (2026-11-21).
+    // Rendering filters them too (Chat.tsx), this stops new ones at source.
+    if (turn.text.trim() === '') return;
     const turns = (await this.get<ConversationTurn[]>('conversation')) ?? [];
     turns.push(turn);
     await this.set('conversation', turns.slice(-200));

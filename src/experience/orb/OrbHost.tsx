@@ -57,8 +57,8 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
   };
 
   return (
-    <section aria-label="Nexus orb" style={styles.wrap}>
-      <div style={styles.contain}>
+    <section aria-label="Nexus orb" style={styles.wrap} className="orb-panel">
+      <div style={styles.contain} className="orb-canvas">
         <Suspense
           fallback={
             <div style={styles.loading}>
@@ -82,14 +82,18 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
           not the intelligence.
         </div>
       )}
-      <div style={styles.status} role="status">
-        <span style={{ ...styles.dot, background: stateColor(state) }} />
-        <strong>{orbStateLabel(state)}</strong>
-        {lastStage && <span style={styles.stage}> · last stage: {lastStage}</span>}
+      {/* Footer bar, below the canvas — never overlaid on the particles, so
+          the state text stays readable (2026-11-21 UI fix). */}
+      <div style={styles.orbFooter}>
+        <span style={styles.status} role="status">
+          <span style={{ ...styles.dot, background: stateColor(state) }} />
+          <strong>{orbStateLabel(state)}</strong>
+          {lastStage && <span style={styles.stage}> · last stage: {lastStage}</span>}
+        </span>
+        <span style={styles.note}>
+          The orb shows only real pipeline states. It never pretends to think.
+        </span>
       </div>
-      <p style={styles.note}>
-        The orb shows only real pipeline states. It never pretends to think.
-      </p>
     </section>
   );
 }
@@ -140,7 +144,8 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#050608',
   },
   // transform creates a containing block for the orb's `fixed inset-0` root.
-  contain: { position: 'relative', height: 520, transform: 'translateZ(0)' },
+  // Height comes from .orb-canvas in index.css (340px phones, 520px desktop).
+  contain: { position: 'relative', transform: 'translateZ(0)' },
   loading: {
     position: 'absolute',
     inset: 0,
@@ -164,25 +169,24 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#ffb3b3',
     fontSize: 14,
   },
+  orbFooter: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '4px 16px',
+    padding: '10px 16px',
+    borderTop: '1px solid #1d2b3a',
+    background: '#070b10',
+    fontSize: 13,
+  },
   status: {
-    position: 'absolute',
-    left: 16,
-    bottom: 16,
     display: 'flex',
     alignItems: 'center',
     gap: 8,
     fontSize: 14,
-    zIndex: 20,
   },
   dot: { width: 10, height: 10, borderRadius: '50%', display: 'inline-block' },
   stage: { color: '#8fa3b8' },
-  note: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    margin: 0,
-    fontSize: 12,
-    color: '#8fa3b8',
-    zIndex: 20,
-  },
+  note: { fontSize: 12, color: '#8fa3b8' },
 };
