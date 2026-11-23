@@ -26,7 +26,7 @@
  * 8. The model-download path is untouched by the renderer (separate
  *    browser diagnosis; the renderer imports nothing from intelligence).
  * 9. CodexModes presets are valid — and not wired to any UI yet.
- * 10. Version is 0.1.6.
+ * 10. Version is 0.1.7.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -293,8 +293,8 @@ test('renderer swap: CodexModes presets are valid — and not wired to any UI ye
   assert.deepEqual(hits, [], `CodexModes must not be imported outside its own file yet: ${hits.join('; ')}`);
 });
 
-test('renderer swap: version is 0.1.6', () => {
+test('renderer swap: version is 0.1.7', () => {
   const pkg = JSON.parse(read('package.json')) as { version: string };
-  assert.equal(pkg.version, '0.1.6');
-  assert.ok(read('src/App.tsx').includes('NVK Agent v0.1.6'));
+  assert.equal(pkg.version, '0.1.7');
+  assert.ok(read('src/App.tsx').includes('NVK Agent v0.1.7'));
 });

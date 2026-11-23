@@ -118,7 +118,7 @@ export const CAPABILITIES: Capability[] = [
   },
   {
     id: 'nexus-orb',
-    name: 'Nexus orb (3D, real activity states)',
+    name: 'NVK (3D, real activity states)',
     layer: 'Experience',
     status: 'OPERATIONAL',
     evidence:

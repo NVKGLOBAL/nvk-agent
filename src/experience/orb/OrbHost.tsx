@@ -1,7 +1,7 @@
 /**
  * NVK Agent — the orb host.
  *
- * Renders the vendored Nexus orb (NVK's own CodexOrbSystem — full-screen
+ * Renders the vendored NVK orb (NVK's own CodexOrbSystem — full-screen
  * three.js hub with the createNexusOrb shader orb and gateway nodes) and
  * drives its activity state ONLY from real pipeline stage events. The orb
  * never animates a state the pipeline did not actually reach.
@@ -100,7 +100,7 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
   const visual = orbVisualForState(state);
 
   return (
-    <section aria-label="Nexus orb" style={styles.wrap} className="orb-panel">
+    <section aria-label="NVK" style={styles.wrap} className="orb-panel">
       <div style={styles.contain} className="orb-canvas">
         <Suspense
           fallback={

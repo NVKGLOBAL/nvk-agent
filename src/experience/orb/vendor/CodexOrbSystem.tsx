@@ -2233,7 +2233,7 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
           type="button"
           onClick={focusOrb}
           className="px-3 py-2 rounded-xl bg-slate-950/85 border border-emerald-500/40 hover:border-emerald-400 text-emerald-400 text-xs font-mono backdrop-blur-md transition-all active:scale-95"
-          title="Focus Nexus Orb"
+          title="Focus NVK"
         >
           Focus
         </button>
@@ -2249,7 +2249,7 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
 
       {!selectedGateway && (
         <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 text-center pointer-events-none">
-          <h1 className="text-4xl font-serif-elegant tracking-wider text-white/90 animate-pulseText">The Nexus Orb</h1>
+          <h1 className="text-4xl font-serif-elegant tracking-wider text-white/90 animate-pulseText">NVK</h1>
           <p className="text-cyan-300/70 mt-2">Select a Gateway Node</p>
         </div>
       )}

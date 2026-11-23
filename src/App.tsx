@@ -92,7 +92,7 @@ export default function App() {
       </main>
 
       <footer style={styles.footer}>
-        NVK Agent v0.1.6 — local-first preview. Local inference first; cloud
+        NVK Agent v0.1.7 — local-first preview. Local inference first; cloud
         only by explicit opt-in. No capability is claimed without evidence —
         see Diagnostics → Capability matrix.
       </footer>

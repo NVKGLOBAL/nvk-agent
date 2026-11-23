@@ -47,5 +47,5 @@ export const HERO_CAPABILITIES: HeroCapability[] = [
 export const EXAMPLE_PROMPTS: string[] = [
   'What is 2+2? Answer in one word.',
   'What can you do?',
-  'Explain the Nexus orb in one sentence.',
+  'Explain NVK in one sentence.',
 ];
