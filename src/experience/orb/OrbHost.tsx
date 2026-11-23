@@ -10,6 +10,13 @@
  * It is rendered inside a transformed wrapper, which makes its fixed
  * positioning resolve against this section instead of the viewport — the
  * original file is untouched.
+ *
+ * v0.1.4: DOM gateway controls. The four gateways exist as spheres inside
+ * the canvas and are clickable there (raycast, canvas-relative coordinates
+ * — see CodexOrbSystem), but a canvas is not a reliable control surface
+ * on its own: this host also renders the same four gateways as real
+ * buttons under the canvas, each navigating to its panel and updating
+ * the footer status. No dead controls.
  */
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { subscribeToStages, PipelineStage } from '../../intelligence/pipeline';
@@ -18,15 +25,27 @@ import {
   orbStateLabel,
   OrbActivityState,
 } from './orb-state';
+import { NEXUS_GATEWAYS } from './vendor/constants';
 
 const CodexOrbSystem = lazy(() => import('./vendor/CodexOrbSystem'));
 
 export type OrbPanel = 'chat' | 'visualizers' | 'diagnostics' | 'settings' | 'agents';
 
+// Gateway → orb view → app panel. The orb's own project map sends each
+// gateway's projects to real pages; here each gateway opens the panel that
+// best represents it in THIS app (the orb IS the organization system).
+const GATEWAY_VIEW: Record<string, string> = {
+  vision: 'codexOrbSystem', // chat — the Vision is the entry point
+  codex: 'omegaLogicCore', // visualizers — the living intelligence
+  nexus: 'agentCommandCenter', // agents — the wider ecosystem
+  lore: 'reasoningNexus', // diagnostics — the foundational research
+};
+
 export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void }) {
   const [state, setState] = useState<OrbActivityState>('idle');
   const [lastStage, setLastStage] = useState<PipelineStage | null>(null);
   const [orbFailed, setOrbFailed] = useState(false);
+  const [activeGateway, setActiveGateway] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = subscribeToStages((event) => {
@@ -56,6 +75,17 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
     else onNavigate('chat');
   };
 
+  // One entry point for gateway selection — used by BOTH the canvas
+  // click (via onGatewaySelect) and the DOM buttons below, so the two
+  // control surfaces can never drift apart.
+  const handleGatewaySelect = (gatewayId: string) => {
+    setActiveGateway(gatewayId);
+    handleNavigate(GATEWAY_VIEW[gatewayId] ?? 'codexOrbSystem');
+  };
+
+  const activeGatewayTitle =
+    NEXUS_GATEWAYS.find((g) => g.id === activeGateway)?.title ?? null;
+
   return (
     <section aria-label="Nexus orb" style={styles.wrap} className="orb-panel">
       <div style={styles.contain} className="orb-canvas">
@@ -72,6 +102,7 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
               onNavigate={(view) => handleNavigate(view)}
               onNavigateExternal={(url) => window.open(url, '_blank', 'noopener')}
               onNavigateNewTab={(url) => window.open(url, '_blank', 'noopener')}
+              onGatewaySelect={handleGatewaySelect}
             />
           </ErrorBoundary>
         </Suspense>
@@ -82,6 +113,27 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
           not the intelligence.
         </div>
       )}
+      {/* DOM gateway controls (v0.1.4): the same four gateways as real
+          buttons, so the orb works as an organization system even when the
+          canvas is not clickable (touch, keyboard, screen reader). Each
+          button navigates to its panel and marks itself active. */}
+      <div style={styles.gatewayRow} role="group" aria-label="Gateway nodes">
+        {NEXUS_GATEWAYS.map((gateway) => (
+          <button
+            key={gateway.id}
+            type="button"
+            aria-pressed={activeGateway === gateway.id}
+            onClick={() => handleGatewaySelect(gateway.id)}
+            style={{
+              ...styles.gatewayButton,
+              ...(activeGateway === gateway.id ? styles.gatewayButtonActive : {}),
+            }}
+            title={gateway.description}
+          >
+            {gateway.title.toUpperCase()}
+          </button>
+        ))}
+      </div>
       {/* Footer bar, below the canvas — never overlaid on the particles, so
           the state text stays readable (2026-11-21 UI fix). */}
       <div style={styles.orbFooter}>
@@ -89,6 +141,9 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
           <span style={{ ...styles.dot, background: stateColor(state) }} />
           <strong>{orbStateLabel(state)}</strong>
           {lastStage && <span style={styles.stage}> · last stage: {lastStage}</span>}
+          {activeGatewayTitle && (
+            <span style={styles.stage}> · Gateway: {activeGatewayTitle}</span>
+          )}
         </span>
         <span style={styles.note}>
           The orb shows only real pipeline states. It never pretends to think.
@@ -179,6 +234,32 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: '1px solid #1d2b3a',
     background: '#070b10',
     fontSize: 13,
+  },
+  gatewayRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+    padding: '10px 16px',
+    borderTop: '1px solid #1d2b3a',
+    background: '#070b10',
+  },
+  gatewayButton: {
+    flex: '1 1 auto',
+    background: '#0a121c',
+    color: '#9fc6e8',
+    border: '1px solid #2a3b4d',
+    borderRadius: 999,
+    padding: '8px 14px',
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: '0.08em',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+  gatewayButtonActive: {
+    background: '#0d2b3d',
+    color: '#00e5ff',
+    borderColor: '#00e5ff',
   },
   status: {
     display: 'flex',

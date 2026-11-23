@@ -40,8 +40,8 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Intelligence',
     status: 'PARTIAL',
     evidence:
-      'Engine loads real models from the Hugging Face hub and generates real text. Node validation passed (milestone-10, 2026-11-21), including through the engine path (test:milestone-10-engine). Browser run 2026-11-21 14:04 PT FAILED pre-fix (empty replies — chat template skipped, see docs/MILESTONE-10.md); fix pushed the same day. PARTIAL until the in-browser end-to-end run passes on a real device.',
-    lastVerified: '2026-11-21',
+      'Engine loads real models from the Hugging Face hub and generates real text. Node validation passed (milestone-10, 2026-11-21), including through the engine path (test:milestone-10-engine). Browser end-to-end PASSED 2026-11-22 (retest #3, v0.1.3 live): chat answered "The sum of 2 and 2 is equal to four."; Diagnostics 6/6 PASS. PARTIAL until the phone run passes — the iPhone crash at 100% load (2026-11-21) is still unresolved.',
+    lastVerified: '2026-11-22',
     notes: 'Default model Xenova/Qwen1.5-0.5B-Chat. No smaller model that answers 2+2 was found (SmolLM 401, Flan-77M fails, distilgpt2 counts). Browser cache ON; WASM threads capped to 2 on low-memory devices; honest low-memory warning before download.',
   },
   {
@@ -50,9 +50,9 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Intelligence',
     status: 'OPERATIONAL',
     evidence:
-      'PASSED 2026-11-21 in Node on this VM: Qwen1.5-0.5B-Chat loaded in 6.0s (cached), answered "Two plus two equals four." in 2,976 ms (~1.7 tok/s). Also passed through the engine path the same day (test:milestone-10-engine, browser chat defaults). Full log in docs/MILESTONE-10.md.',
-    lastVerified: '2026-11-21',
-    notes: 'Browser end-to-end run FAILED pre-fix 2026-11-21 14:04 PT (empty replies, template bug) — retest pending after the fix. Flan-T5-248M failed this test in five prompt shapes (see docs/MILESTONE-10.md).',
+      'PASSED 2026-11-21 in Node on this VM: Qwen1.5-0.5B-Chat loaded in 6.0s (cached), answered "Two plus two equals four." in 2,976 ms (~1.7 tok/s). Also passed through the engine path the same day (test:milestone-10-engine, browser chat defaults). Full log in docs/MILESTONE-10.md. Browser end-to-end PASSED 2026-11-22 (retest #3, v0.1.3 live): "The sum of 2 and 2 is equal to four.", Diagnostics 6/6 PASS.',
+    lastVerified: '2026-11-22',
+    notes: 'Earlier browser run FAILED pre-fix 2026-11-21 14:04 PT (empty replies, template bug — fixed the same day, see docs/MILESTONE-10.md). Flan-T5-248M failed this test in five prompt shapes (see docs/MILESTONE-10.md).',
   },
   {
     id: 'agent-pipeline',

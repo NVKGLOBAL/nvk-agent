@@ -11,10 +11,11 @@
  *     Resonance frequency is 0.0 Hz everywhere — unmeasured, labelled so.
  */
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { subscribeToStages } from '../../intelligence/pipeline';
+import { subscribeToStages, getGenerationEvents } from '../../intelligence/pipeline';
 import { localInferenceEngine } from '../../intelligence/inference';
 import { CAPABILITIES } from '../../intelligence/capability-registry';
 import type { ResonanceEffect } from './types';
+import { resonanceEffectFromGeneration } from './types';
 import type { GlyphMutationNode, Axiom } from './types';
 
 const ResonanceVisualizerPanel = lazy(() =>
@@ -42,6 +43,24 @@ export function VisualizersPanel() {
   }, []);
 
   useEffect(() => {
+    // Seed from runs that already happened (v0.1.4): stage events are
+    // ephemeral — a generation run from Chat, before this tab was opened,
+    // used to leave the panel saying "No generation events yet" even
+    // though the run had happened. The pipeline keeps the last 20 runs;
+    // this tab reads them on mount, then subscribes for new ones.
+    const past = getGenerationEvents();
+    if (past.length > 0) {
+      setEffects(past.map((ev) => resonanceEffectFromGeneration(ev)));
+      const latest = past[past.length - 1];
+      setGlyphs(
+        latest.stages.map((s) => ({
+          id: `stage-${s.stage}`,
+          label: s.stage,
+          entropyLevel: Math.min(1, s.elapsedMs / Math.max(1, latest.elapsedMs)),
+          traits: [s.stage],
+        })),
+      );
+    }
     const unsub = subscribeToStages((event) => {
       if (event.stage === 'result') {
         const engine = localInferenceEngine.getState();

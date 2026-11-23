@@ -41,6 +41,54 @@ function lsAvailable(): boolean {
   }
 }
 
+/**
+ * Prune the known-broken history that is already stored on the device.
+ * Pure function, tested in tests/memory-prune.test.ts.
+ *
+ * The pre-fix engine (2026-11-21, sampling bug) stored turns the v0.1.3
+ * guards never cleaned: a wrong agent reply "1" to 2+2, the same user
+ * prompt repeated four times, and prompts with no reply at all. A fresh
+ * user must never see wrong or unanswered turns. Rules, in order:
+ *   1. Drop empty agent turns.
+ *   2. Drop the known-broken single-character agent reply "1".
+ *   3. Collapse consecutive identical user prompts, keeping the LAST one
+ *      (and its reply) — the earlier repeats are the broken seed.
+ *   4. Drop a trailing user turn with no agent reply after it (orphaned)
+ *      — but only when it is stale (older than 10 minutes). A prompt whose
+ *      reply is still in flight is seconds old and must be kept: the
+ *      pipeline appends the user turn first and the agent reply second,
+ *      so pruning a fresh trailing prompt would delete the user's own
+ *      question before its answer lands.
+ * Idempotent: pruning a pruned list changes nothing. Legitimate history
+ * (distinct prompts, real replies) passes through untouched.
+ */
+export function pruneConversation(turns: ConversationTurn[]): ConversationTurn[] {
+  const kept: ConversationTurn[] = [];
+  for (const turn of turns) {
+    if (turn.role === 'agent' && turn.text.trim() === '') continue;
+    if (turn.role === 'agent' && turn.text.trim() === '1') continue;
+    if (
+      turn.role === 'user' &&
+      kept.length > 0 &&
+      kept[kept.length - 1].role === 'user' &&
+      kept[kept.length - 1].text === turn.text
+    ) {
+      // Earlier identical prompt, no reply between them: keep the last.
+      kept[kept.length - 1] = turn;
+      continue;
+    }
+    kept.push(turn);
+  }
+  // Trailing orphaned prompt: the user asked and no answer ever came back.
+  // Only stale orphans (the broken seeded history is hours old); a prompt
+  // sent seconds ago may still be waiting for its reply.
+  const last = kept[kept.length - 1];
+  if (last && last.role === 'user' && Date.now() - last.at > 10 * 60 * 1000) {
+    kept.pop();
+  }
+  return kept;
+}
+
 export class MemoryStore {
   private mem = new Map<string, MemoryRecord>();
   private dbPromise: Promise<IDBDatabase> | null = null;
@@ -118,13 +166,20 @@ export class MemoryStore {
     // replies that persisted as broken-looking blank bubbles (2026-11-21).
     // Rendering filters them too (Chat.tsx), this stops new ones at source.
     if (turn.text.trim() === '') return;
-    const turns = (await this.get<ConversationTurn[]>('conversation')) ?? [];
+    // Read through getConversation() so the stored list is pruned as it
+    // grows: the broken pre-fix history (wrong "1" reply, repeated
+    // prompts, orphaned turns) is cleaned on the next append, not kept
+    // forever (2026-11-22, v0.1.4).
+    const turns = await this.getConversation();
     turns.push(turn);
     await this.set('conversation', turns.slice(-200));
   }
 
   async getConversation(): Promise<ConversationTurn[]> {
-    return (await this.get<ConversationTurn[]>('conversation')) ?? [];
+    // Read-time prune: the broken history already on the device is cleaned
+    // when read, so a fresh user never sees it (2026-11-22, v0.1.4).
+    const turns = (await this.get<ConversationTurn[]>('conversation')) ?? [];
+    return pruneConversation(turns);
   }
 
   async clearAll(): Promise<void> {

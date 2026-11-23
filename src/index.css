@@ -31,18 +31,41 @@
 }
 
 /*
- * The vendored orb + particle canvases are sized by three.js to the WINDOW,
- * not to their panel — so even with layout restored, the galaxy disk (drawn
- * at the centre of a viewport-tall canvas) sat as a strip near the bottom
- * of the panel and the orb sat low instead of centred. Force both canvases
- * to fill their (panel-sized) parents so the orb is centred in the panel
- * and the particle galaxy fills the panel. !important beats the inline
- * sizes three.js sets on every resize. Scoped to the orb section only, so
- * the visualizer canvases elsewhere are untouched.
+ * The vendored orb canvas used to be sized by three.js to the WINDOW, not
+ * to its panel — so even with layout restored, the galaxy disk (drawn at
+ * the centre of a viewport-tall canvas) sat as a strip near the bottom of
+ * the panel and the orb sat low instead of centred. v0.1.4 fixed the
+ * sizing at the source (CodexOrbSystem sizes camera/renderer/composer to
+ * the canvas's own displayed size via ResizeObserver). This rule stays as
+ * belt-and-braces so the canvas always fills its panel-sized parent.
+ * !important beats the inline sizes three.js sets on every resize.
+ * Scoped to the orb section only, so the visualizer canvases elsewhere
+ * are untouched.
  */
 .orb-panel canvas {
   width: 100% !important;
   height: 100% !important;
+}
+
+/*
+ * Top nav (v0.1.4): one scrollable row on desktop; on phones the pills
+ * wrap into rows instead of scrolling — retest #3 found Settings cut off
+ * with a page-level horizontal scrollbar on a ~500px screen.
+ */
+.app-nav {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+@media (max-width: 560px) {
+  .app-nav {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .app-nav button {
+    flex: 1 1 28% !important;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
 }
 
 /*

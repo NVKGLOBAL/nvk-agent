@@ -35,7 +35,7 @@ export default function App() {
             The orb shows what it is really doing.
           </p>
         </div>
-        <nav style={styles.nav} aria-label="Sections">
+        <nav style={styles.nav} className="app-nav" aria-label="Sections">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -92,7 +92,7 @@ export default function App() {
       </main>
 
       <footer style={styles.footer}>
-        NVK Agent v0.1.3 — local-first preview. Local inference first; cloud
+        NVK Agent v0.1.4 — local-first preview. Local inference first; cloud
         only by explicit opt-in. No capability is claimed without evidence —
         see Diagnostics → Capability matrix.
       </footer>
@@ -117,13 +117,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   title: { margin: 0, fontSize: 32, letterSpacing: 2 },
   subtitle: { margin: 0, color: '#8fa3b8' },
-  // One row, horizontally scrollable on phones — wrapping to two rows used
-  // to eat first-screen space (2026-11-21 UI fix).
+  // Nav layout lives in index.css (.app-nav): one scrollable row on
+  // desktop, wrapping buttons on phones. Retest #3: the nowrap row cut
+  // Settings off on a ~500px screen and the page itself gained a
+  // horizontal scrollbar — on phones the pills wrap instead of scrolling.
   nav: {
     display: 'flex',
     gap: 8,
-    flexWrap: 'nowrap',
-    overflowX: 'auto',
     paddingBottom: 4,
   },
   tab: {
@@ -178,6 +178,9 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontSize: 14,
   },
-  panel: { border: '1px solid #1d2b3a', borderRadius: 16, padding: 20 },
+  // overflowX auto (v0.1.4): the diagnostics/settings tables are wider
+  // than a phone — they scroll inside the panel instead of pushing the
+  // whole page into a horizontal scrollbar (retest #3).
+  panel: { border: '1px solid #1d2b3a', borderRadius: 16, padding: 20, overflowX: 'auto' },
   footer: { fontSize: 13, color: '#8fa3b8', textAlign: 'center' },
 };

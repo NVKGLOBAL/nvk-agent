@@ -51,3 +51,34 @@ export interface RewovenGlyph {
   boundAxiomKey: string;
   label?: string;
 }
+
+/**
+ * Map a completed pipeline run to a resonance effect (v0.1.4). Pure
+ * function so the mapping is testable: the panel seeds from stored
+ * generation events on mount AND from live stage events while open — both
+ * paths must build the same effect. Intensity is measured tok/s (capped
+ * at 1); demo-mode runs carry no tok/s and read as source "demo mode".
+ */
+export function resonanceEffectFromGeneration(ev: {
+  id: string;
+  at: number;
+  modelId: string | null;
+  tokensPerSecond: number | null;
+  elapsedMs: number;
+  demoMode: boolean;
+}): ResonanceEffect {
+  return {
+    id: `fx-${ev.id}`,
+    source: ev.demoMode ? 'demo mode' : (ev.modelId ?? 'demo mode'),
+    text: ev.demoMode
+      ? 'Demo-mode result stored as evidence (no model loaded).'
+      : 'Pipeline result stored as evidence.',
+    time: new Date(ev.at).toLocaleTimeString(),
+    intensity: Math.min(1, (ev.tokensPerSecond ?? 0) / 50),
+    duration: `${(ev.elapsedMs / 1000).toFixed(1)}`,
+    borderColorClass: 'border-emerald-400',
+    textColorClass: 'text-emerald-300',
+    valueColorClass: 'text-emerald-200',
+    colorProfile: '#00FFB3',
+  };
+}

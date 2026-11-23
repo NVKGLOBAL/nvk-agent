@@ -93,7 +93,7 @@ export function Chat({ prefill }: { prefill?: { text: string; nonce: number } | 
             <strong>Local model loaded:</strong> {engine.activeModelId} · adapter{' '}
             {engine.lastAdapter ?? 'unknown'} · last generation{' '}
             {engine.lastTokensPerSecond ?? '—'} tok/s
-            {engine.cachedBeforeLoad === true && (
+            {engine.cachedBeforeLoad === true && engine.downloadedThisLoad === false && (
               <> · weights from cache (no re-download)</>
             )}
           </p>
@@ -130,10 +130,22 @@ export function Chat({ prefill }: { prefill?: { text: string; nonce: number } | 
               the 2+2 test.
             </p>
           )}
-          {engine.cachedBeforeLoad === true && (
-            <p style={styles.small}>
-              Weights cached on this device — loading from cache, no
-              re-download.
+          {engine.cachedBeforeLoad === true &&
+            engine.downloadedThisLoad === false &&
+            engine.status !== 'downloading' &&
+            engine.status !== 'loading' && (
+              <p style={styles.small}>
+                Weights already on this device — loading from cache, no
+                re-download.
+              </p>
+            )}
+          {(engine.status === 'downloading' || engine.status === 'loading') && (
+            <p style={styles.small} role="status">
+              {engine.statusMessage}
+              {engine.progress > 0 ? ` — ${engine.progress}%` : ''}
+              {engine.cachedBeforeLoad === true
+                ? ' (some files were already cached on this device)'
+                : ' (first load — the full weights download can take a few minutes)'}
             </p>
           )}
           <label>
@@ -180,7 +192,7 @@ export function Chat({ prefill }: { prefill?: { text: string; nonce: number } | 
           onKeyDown={(e) => e.key === 'Enter' && send()}
           placeholder={
             demoMode
-              ? 'Demo mode — download a model to chat for real…'
+              ? 'Download a model to chat…'
               : 'Ask the agent…'
           }
           aria-label="Message the agent"
@@ -253,6 +265,7 @@ const styles: Record<string, React.CSSProperties> = {
   composer: { display: 'flex', gap: 8 },
   input: {
     flex: 1,
+    minWidth: 0,
     background: '#0a121c',
     color: '#e8eef4',
     border: '1px solid #2a3b4d',

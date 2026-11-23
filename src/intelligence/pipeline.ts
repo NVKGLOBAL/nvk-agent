@@ -59,6 +59,35 @@ export interface PipelineOptions {
 type StageListener = (event: StageEvent) => void;
 const stageListeners = new Set<StageListener>();
 
+/**
+ * Completed generations, kept in memory so panels that mount AFTER a run
+ * can still show it. v0.1.4 fix: VisualizersPanel only received `result`
+ * stage events while it was mounted — a generation run from Chat left the
+ * Visualizations tab saying "No generation events yet" even though the
+ * run had happened. Stage events are ephemeral; this ring buffer is the
+ * durable record (last 20 runs, in-memory only, never leaves the device).
+ */
+export interface GenerationEvent {
+  id: string;
+  at: number;
+  modelId: string | null;
+  tokensPerSecond: number | null;
+  elapsedMs: number;
+  demoMode: boolean;
+  stages: StageEvent[];
+}
+
+const generationEvents: GenerationEvent[] = [];
+
+export function getGenerationEvents(): GenerationEvent[] {
+  return [...generationEvents];
+}
+
+function recordGeneration(event: GenerationEvent): void {
+  generationEvents.push(event);
+  if (generationEvents.length > 20) generationEvents.splice(0, generationEvents.length - 20);
+}
+
 export function subscribeToStages(fn: StageListener): () => void {
   stageListeners.add(fn);
   return () => {
@@ -227,6 +256,21 @@ export async function runPipeline(
   }
 
   push(emit('result', started, 'human-readable result ready'));
+
+  // Durable record of this run (v0.1.4): panels that mount later — the
+  // Visualizations tab, opened after a Chat run — read this instead of
+  // depending on catching the ephemeral stage event while mounted.
+  recordGeneration({
+    id: `gen-${Date.now()}`,
+    at: Date.now(),
+    modelId,
+    tokensPerSecond: demoMode
+      ? null
+      : (localInferenceEngine.getState().lastTokensPerSecond ?? null),
+    elapsedMs: Date.now() - started,
+    demoMode,
+    stages: [...stages],
+  });
 
   // Persist the turn in local memory.
   await memoryStore.appendTurn({ role: 'user', text: input, at: Date.now() });

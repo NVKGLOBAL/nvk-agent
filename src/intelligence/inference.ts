@@ -149,8 +149,22 @@ export interface EngineState {
    * Whether the model weights were already in the browser Cache API when
    * the last load started. Null until a load runs. A crash no longer means
    * a full re-download when this is true.
+   *
+   * WEIGHTS-specific (v0.1.4): the old check returned true when ANY file
+   * for the model was cached — a tiny config.json from a crashed partial
+   * download was enough to claim "from cache, no re-download" while the
+   * 350 MB weights file still downloaded for ~3 minutes (retest #3).
+   * This now checks for a cached `.onnx` weights file specifically.
    */
   cachedBeforeLoad: boolean | null;
+  /**
+   * Whether this load actually downloaded weights (a progress event for a
+   * `.onnx` file). transformers.js serves a cached file without progress
+   * events (its tryCache short-circuits on cache.match), so a weights
+   * progress event means a real download happened. The UI claims
+   * "from cache" only when cachedBeforeLoad is true AND this is false.
+   */
+  downloadedThisLoad: boolean | null;
 }
 
 export class ModelNotLoadedError extends Error {
@@ -193,6 +207,7 @@ export class LocalInferenceEngine {
     lastGenerationMs: null,
     lastAdapter: null,
     cachedBeforeLoad: null,
+    downloadedThisLoad: null,
   };
   private listeners = new Set<() => void>();
   private loading: Promise<boolean> | null = null;
@@ -273,13 +288,17 @@ export class LocalInferenceEngine {
     // Cache pre-check (transformers-cache, the Cache API store the library
     // uses): a previous download — even one cut short by a crash — must
     // not force a full re-download. The status message says which it is.
-    const cached = await isModelCached(model.id);
+    // WEIGHTS-specific (v0.1.4): only a cached .onnx file means the
+    // weights are on the device; small files (config, tokenizer) do not.
+    const cached = await isModelWeightsCached(model.id);
+    let downloadedWeights = false;
     this.state = {
       ...this.state,
       status: 'downloading',
       activeModelId: model.id,
       progress: 0,
       cachedBeforeLoad: cached,
+      downloadedThisLoad: false,
       statusMessage: cached
         ? `Loading ${model.name} weights from this device (cached)…`
         : `Downloading ${model.name} weights…`,
@@ -291,10 +310,22 @@ export class LocalInferenceEngine {
         progress_callback: (info: any) => {
           if (info && typeof info.progress === 'number') {
             const pct = Math.round(info.progress);
+            // A progress event for a weights file means a real download:
+            // transformers.js serves cached files without progress events
+            // (tryCache short-circuits on cache.match), so this only
+            // fires when bytes are actually arriving.
+            if (
+              typeof info.file === 'string' &&
+              info.file.endsWith('.onnx') &&
+              pct < 100
+            ) {
+              downloadedWeights = true;
+            }
             this.state = {
               ...this.state,
               status: pct >= 100 ? 'loading' : 'downloading',
               progress: pct,
+              downloadedThisLoad: downloadedWeights,
               statusMessage: `Loading weights: ${pct}% (${info.file ?? 'model.onnx'})`,
             };
             onProgress?.({
@@ -317,6 +348,7 @@ export class LocalInferenceEngine {
         ...this.state,
         status: 'ready',
         progress: 100,
+        downloadedThisLoad: downloadedWeights,
         statusMessage: `${model.name} ready (${adapter.toUpperCase()}).`,
         lastAdapter: adapter,
       };
@@ -439,24 +471,37 @@ export class LocalInferenceEngine {
       lastGenerationMs: null,
       lastAdapter: null,
       cachedBeforeLoad: null,
+      downloadedThisLoad: null,
     };
     this.notify();
   }
 }
 
 /**
- * Cache pre-check: is any file for this model already in the browser Cache
- * API store transformers.js uses ('transformers-cache', keyed by the full
- * Hugging Face URL)? Checked BEFORE instantiation so a load that follows
- * a crash reports "cached — loading from this device" instead of starting
- * a full re-download with no explanation. False in Node (no Cache API).
+ * Weights cache pre-check: is the model's `.onnx` weights file already in
+ * the browser Cache API store transformers.js uses ('transformers-cache',
+ * keyed by the full Hugging Face URL)? Checked BEFORE instantiation so a
+ * load that follows a crash reports "cached — loading from this device"
+ * instead of starting a full re-download with no explanation. False in
+ * Node (no Cache API).
+ *
+ * WEIGHTS-specific (v0.1.4): the old check returned true when ANY file for
+ * the model was cached — a tiny config.json from a crashed partial
+ * download was enough to claim "from cache, no re-download" while the
+ * 350 MB weights file still downloaded for ~3 minutes (retest #3). A
+ * cached `.onnx` key is the only signal that the weights are on-device:
+ * transformers.js caches a file only after its full download, and serves
+ * a cached file without progress events (tryCache short-circuits on
+ * cache.match).
  */
-export async function isModelCached(modelId: string): Promise<boolean> {
+export async function isModelWeightsCached(modelId: string): Promise<boolean> {
   try {
     if (typeof caches === 'undefined') return false;
     const cache = await caches.open('transformers-cache');
     const keys = await cache.keys();
-    return keys.some((r) => r.url.includes(modelId));
+    return keys.some(
+      (r) => r.url.includes(modelId) && r.url.includes('.onnx'),
+    );
   } catch {
     return false;
   }

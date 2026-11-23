@@ -79,6 +79,27 @@ test('registry: every entry has a layer and evidence', () => {
   }
 });
 
+test('registry: no entry still says a retest is pending (v0.1.4 — retest #3 passed)', () => {
+  // The 2026-11-21 pre-fix failure note stayed in the matrix after the live
+  // browser run passed on 2026-11-22. Evidence/notes must cite the live
+  // run, never an open "retest pending" promise.
+  for (const c of CAPABILITIES) {
+    assert.doesNotMatch(c.evidence, /retest pending/i, `${c.id} evidence is stale`);
+    if (c.notes) {
+      assert.doesNotMatch(c.notes, /retest pending/i, `${c.id} notes are stale`);
+    }
+  }
+  const milestone = CAPABILITIES.find((c) => c.id === 'milestone-10-validation');
+  assert.ok(milestone);
+  assert.match(milestone.evidence, /PASSED 2026-11-22/);
+  assert.match(milestone.evidence, /The sum of 2 and 2 is equal to four/);
+  assert.equal(milestone.lastVerified, '2026-11-22');
+  const local = CAPABILITIES.find((c) => c.id === 'local-inference');
+  assert.ok(local);
+  assert.match(local.evidence, /PASSED 2026-11-22/);
+  assert.equal(local.lastVerified, '2026-11-22');
+});
+
 test('engine: generate() without a loaded model throws, never fakes an answer', async () => {
   const engine = new LocalInferenceEngine();
   await assert.rejects(() => engine.generate('What is 2+2?'), ModelNotLoadedError);
