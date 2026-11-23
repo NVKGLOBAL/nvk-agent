@@ -15,7 +15,7 @@ the Unification Directive §1 classifications.
 | Diagnostics | Intelligence | OPERATIONAL | `src/intelligence/diagnostics.ts` measures model state, adapter, counted outbound requests, storage. Can report FAIL. |
 | System Settings | Experience | OPERATIONAL | `src/intelligence/settings.ts`: cloud OFF by default, keys session-only by default, model management present. |
 | Agent spawn | Intelligence | OPERATIONAL | `src/intelligence/agents.ts`: spawn registers, runs, records result + evidence. |
-| Nexus orb | Experience | OPERATIONAL | Vendored from `NVKGLOBAL/nvknexusorb` (NexusOrb.tsx blob `20410bb0`). States driven only by real pipeline state. |
+| Nexus orb | Experience | OPERATIONAL | Renderer swapped in v0.1.6 (Phase B): NVK-AI-OS CodexOrbSystem port (NVKGLOBAL/NVK-AI-OS @ b723bc4d9), 11 orb modes + 11 particle modes, behind the Phase A OrbVisualInput interface. States driven only by real pipeline state. 41/41 tests pass, tsc clean, build succeeds; the live-browser check comes after deploy, as before. |
 | Resonance visualizer | Experience | OPERATIONAL | Vendored from `NVKGLOBAL/-CODEXA` `ResonanceVisualizerPanel.tsx`. Real particle bursts per generation event. |
 | Knowledge graph | Experience | OPERATIONAL | Vendored from `NVKGLOBAL/-CODEXA` `EmergentLogicWeb.tsx`. Data-driven from the registry + pipeline stages. |
 | Cloud provider — Gemini | Intelligence | BLOCKED | No key, cloud OFF by default. Blocked on owner opt-in + key. |

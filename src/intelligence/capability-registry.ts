@@ -122,8 +122,8 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Experience',
     status: 'OPERATIONAL',
     evidence:
-      'Vendored from NVKGLOBAL/nvknexusorb (NexusOrb.tsx verified, blob 20410bb0). Orb states are driven only by real pipeline state.',
-    lastVerified: '2026-11-21',
+      'Renderer swapped in v0.1.6 (Phase B): NVK-AI-OS CodexOrbSystem port (NVKGLOBAL/NVK-AI-OS @ b723bc4d9), 11 orb modes + 11 particle modes, behind the Phase A OrbVisualInput interface. Orb states are driven only by real pipeline state. 41/41 tests pass, tsc clean, build succeeds; the live-browser check comes after deploy, as before.',
+    lastVerified: '2026-11-22',
   },
   {
     id: 'resonance-visualizer',
