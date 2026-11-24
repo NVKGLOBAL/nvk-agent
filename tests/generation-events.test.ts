@@ -16,12 +16,17 @@ import assert from 'node:assert/strict';
 
 import { runPipeline, getGenerationEvents } from '../src/intelligence/pipeline';
 import { resonanceEffectFromGeneration } from '../src/experience/visualizers/types';
+import { settingsStore } from '../src/intelligence/settings';
 
 test('generation events: none recorded before any run', () => {
   assert.deepEqual(getGenerationEvents(), []);
 });
 
 test('generation events: a demo-mode runPipeline records one event with stages', async () => {
+  // Demo-mode precondition: the free gateway is ON by default in the
+  // browser, which would answer via the live gateway instead of demo
+  // mode. These tests assert demo mode, so they turn all cloud off.
+  settingsStore.update({ cloudEnabled: false, providerKey: null, cloudProvider: null, freeCloudEnabled: false });
   const result = await runPipeline('What is 2+2?');
   assert.equal(result.demoMode, true, 'no model is loaded in the test process');
 

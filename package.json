@@ -27,7 +27,7 @@
     "build": "tsc --noEmit && vite build",
     "dev": "vite",
     "preview": "vite preview",
-    "test": "tsx --test tests/capability-registry.test.ts tests/hero-content.test.ts tests/memory-prune.test.ts tests/memory-clear.test.ts tests/generation-events.test.ts tests/orb-state-discipline.test.ts tests/orb-renderer-swap.test.ts tests/orb-nodes-v018.test.ts tests/orb-life-v019.test.ts tests/metacognition.test.ts tests/tool-contract.test.ts tests/memory-window.test.ts tests/run-budget.test.ts tests/plan-dag.test.ts tests/run-trace.test.ts tests/checkpoint.test.ts tests/rubrics.test.ts tests/judge.test.ts tests/connectors.test.ts tests/pipeline-connectors.test.ts tests/voice.test.ts tests/retest-14-demo-tools.test.ts tests/relay-adapter.test.ts",
+    "test": "tsx --test tests/capability-registry.test.ts tests/hero-content.test.ts tests/memory-prune.test.ts tests/memory-clear.test.ts tests/generation-events.test.ts tests/orb-state-discipline.test.ts tests/orb-renderer-swap.test.ts tests/orb-nodes-v018.test.ts tests/orb-life-v019.test.ts tests/metacognition.test.ts tests/tool-contract.test.ts tests/memory-window.test.ts tests/run-budget.test.ts tests/plan-dag.test.ts tests/run-trace.test.ts tests/checkpoint.test.ts tests/rubrics.test.ts tests/judge.test.ts tests/connectors.test.ts tests/pipeline-connectors.test.ts tests/voice.test.ts tests/retest-14-demo-tools.test.ts tests/relay-adapter.test.ts tests/router-gateway.test.ts",
     "test:milestone-10": "node tests/milestone-10.mjs",
     "test:milestone-10-engine": "tsx tests/milestone-10-engine.ts",
     "test:milestone-10-pipeline": "tsx tests/milestone-10-pipeline.ts"

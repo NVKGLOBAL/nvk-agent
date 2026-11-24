@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { runPipeline, PipelineResult } from '../../intelligence/pipeline';
-import { localInferenceEngine, EngineState, isLowMemoryDevice } from '../../intelligence/inference';
+import { localInferenceEngine, EngineState, isLowMemoryDevice, isModelWeightsCached } from '../../intelligence/inference';
 import { modelRegistry } from '../../intelligence/model-registry';
 import { settingsStore } from '../../intelligence/settings';
 import { memoryStore, ConversationTurn } from '../../intelligence/memory';
@@ -29,6 +29,22 @@ export function Chat({ prefill }: { prefill?: { text: string; nonce: number } | 
       setEngine(localInferenceEngine.getState()),
     );
     memoryStore.getConversation().then(setTurns);
+    // Auto-load from cache (CODEXA activation-handoff lesson, 2026-11-23):
+    // when the model weights are already on this device, load them on
+    // mount — no download, no consent needed, the weights are already
+    // here. When nothing is cached, the download stays user-initiated
+    // (the 350 MB pull needs the owner's consent). This is what makes a
+    // returning device open straight into a working agent instead of
+    // demo mode.
+    (async () => {
+      if (localInferenceEngine.isReady()) return;
+      try {
+        const cached = await isModelWeightsCached(settingsStore.get().activeModelId);
+        if (cached) await localInferenceEngine.load(settingsStore.get().activeModelId);
+      } catch {
+        /* auto-load is best-effort — the download button remains */
+      }
+    })();
     return un1;
   }, []);
 
@@ -42,7 +58,10 @@ export function Chat({ prefill }: { prefill?: { text: string; nonce: number } | 
   }, [prefill]);
 
   const settings = settingsStore.get();
-  const demoMode = engine.status !== 'ready' && !settings.cloudEnabled;
+  // Demo mode only when NOTHING can answer: no local model, no provider
+  // key, and the free cloud gateway off. When the gateway is on, the
+  // chat answers through it — it is not demo mode.
+  const demoMode = engine.status !== 'ready' && !settings.cloudEnabled && !settings.freeCloudEnabled;
 
   async function send() {
     const text = input.trim();
@@ -101,6 +120,12 @@ export function Chat({ prefill }: { prefill?: { text: string; nonce: number } | 
           <p>
             <strong>Cloud connected:</strong> {settings.cloudProvider}. Requests leave
             this device.
+          </p>
+        ) : settings.freeCloudEnabled ? (
+          <p>
+            <strong>Free cloud gateway:</strong> Kilo (keyless) via the shared NVK
+            brain endpoint. Requests leave this device; the local model is
+            not loaded. Turn it off in Settings for local-only.
           </p>
         ) : (
           <p>

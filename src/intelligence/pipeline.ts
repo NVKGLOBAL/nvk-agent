@@ -11,7 +11,7 @@
  * they are the only thing allowed to move the orb's activity state.
  */
 import { localInferenceEngine } from './inference';
-import { decideRoute, generateViaCloud } from './router';
+import { decideRoute, generateViaCloud, generateViaGateway } from './router';
 import { getCapability } from './capability-registry';
 import { memoryStore, buildHistoryTranscript } from './memory';
 import { agentContextNote } from './agent-context';
@@ -405,6 +405,36 @@ export async function runPipeline(
           `local generation, ${result.tokensPerSecond} tok/s, ${result.elapsedMs} ms`,
         ),
       );
+    }
+  } else if (decision.route === 'cloud-gateway') {
+    // Free cloud gateway (Kilo, keyless, via the shared NVK brain
+    // endpoint). Tried only when the local model is not loaded and no
+    // provider key is configured — it never overrides a loaded local
+    // model. Returns null when the gateway cannot serve the request;
+    // that falls through to demo mode honestly, never a fake answer.
+    const gateway = await generateViaGateway(input);
+    if (gateway) {
+      modelId = `cloud:gateway:${gateway.tier}`;
+      answer = gateway.text;
+      push(
+        emit(
+          'reasoning',
+          started,
+          `cloud gateway (${gateway.tier}${gateway.model ? `, ${gateway.model}` : ''})${gateway.notice ? ` — ${gateway.notice}` : ''}`,
+        ),
+      );
+    } else {
+      demoMode = true;
+      push(
+        emit(
+          'reasoning',
+          started,
+          'No model loaded and the free cloud gateway could not answer — demo mode. No answer fabricated.',
+        ),
+      );
+      answer =
+        'Demo mode — no model is loaded and the free cloud gateway could not answer right now. ' +
+        'Download a model (Qwen 1.5 0.5B Chat, ~350 MB) or connect a provider in Settings to chat for real.';
     }
   } else {
     const cloud = await generateViaCloud(input);

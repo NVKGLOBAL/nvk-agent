@@ -16,6 +16,16 @@ export interface AgentSettings {
   providerKey: string | null;
   persistKey: boolean;
   downloadConsentGiven: boolean;
+  /**
+   * Free cloud gateway (the shared NVK brain endpoint,
+   * codexa.nvkglobal.workers.dev — Kilo free tier, keyless). ON by
+   * default: NvK wants the AI unlimited (2026-11-23) and approved the
+   * same Kilo tier in CODEXA's default chain. When the local model is
+   * not loaded and no provider key is configured, the gateway answers
+   * instead of demo mode. Requests leave this device to the gateway;
+   * sensitive work stays local. Turn it off in Settings for local-only.
+   */
+  freeCloudEnabled: boolean;
 }
 
 const SETTINGS_KEY = 'nvk-agent:settings';
@@ -26,6 +36,7 @@ const DEFAULTS: AgentSettings = {
   providerKey: null,
   persistKey: false,
   downloadConsentGiven: false,
+  freeCloudEnabled: true,
 };
 
 function readStored(): Partial<AgentSettings> {

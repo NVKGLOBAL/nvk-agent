@@ -43,6 +43,7 @@ import {
   type OrbActivityState,
 } from '../src/experience/orb/orb-state';
 import { checkMilestone10Answer } from '../src/intelligence/inference';
+import { settingsStore } from '../src/intelligence/settings';
 
 const EXPECTED_RUN_SEQUENCE: OrbActivityState[] = [
   'listening',
@@ -54,6 +55,10 @@ const EXPECTED_RUN_SEQUENCE: OrbActivityState[] = [
 ];
 
 test('orb states: scripted 2+2 run moves the orb listening → thinking → planning → executing → verifying → complete, each citing a real stage event', async () => {
+  // Demo-mode precondition: the free gateway is ON by default in the
+  // browser, which would answer via the live gateway instead of demo
+  // mode. These tests assert demo mode, so they turn all cloud off.
+  settingsStore.update({ cloudEnabled: false, providerKey: null, cloudProvider: null, freeCloudEnabled: false });
   const seen: { state: OrbActivityState; event: StageEvent }[] = [];
   const unsub = subscribeToStages((event) => {
     seen.push({ state: orbStateForStageEvent(event), event });
@@ -187,6 +192,10 @@ test('no canned or scripted state machinery anywhere in the Agent source', () =>
 });
 
 test('no canned answers in the chat path: demo-mode 2+2 is not answered, it says so', async () => {
+  // Demo-mode precondition: the free gateway is ON by default in the
+  // browser, which would answer via the live gateway instead of demo
+  // mode. These tests assert demo mode, so they turn all cloud off.
+  settingsStore.update({ cloudEnabled: false, providerKey: null, cloudProvider: null, freeCloudEnabled: false });
   const result = await runPipeline('What is 2+2? Answer in one word.');
   assert.equal(result.demoMode, true, 'no model is loaded in the test process');
   assert.match(result.answer, /Demo mode/, 'demo answer says it is demo mode');

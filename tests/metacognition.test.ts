@@ -27,6 +27,7 @@ import {
 import { storeEvidence } from '../src/sovereign/evidence';
 import { memoryStore } from '../src/intelligence/memory';
 import { runPipeline } from '../src/intelligence/pipeline';
+import { settingsStore } from '../src/intelligence/settings';
 
 /* ------------------------------------------------------------------ */
 /* assessConfidence                                                    */
@@ -303,6 +304,10 @@ test('learning gate: a claimed hash match that fails re-verification is an attem
 /* ------------------------------------------------------------------ */
 
 test('pipeline: every run carries metacognition with reasons', async () => {
+  // Demo-mode precondition: the free gateway is ON by default in the
+  // browser, which would answer via the live gateway instead of demo
+  // mode. These tests assert demo mode, so they turn all cloud off.
+  settingsStore.update({ cloudEnabled: false, providerKey: null, cloudProvider: null, freeCloudEnabled: false });
   const result = await runPipeline('What is 2+2? Answer in one word.');
   assert.equal(result.demoMode, true, 'no model is loaded in the test process');
   const meta = result.metacognition;

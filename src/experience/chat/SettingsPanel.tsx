@@ -129,9 +129,19 @@ export function SettingsPanel() {
           </p>
         )}
         <p style={styles.small}>
-          Cloud is off by default and never the fallback when local inference
-          fails. A local failure is reported, not papered over.
+          Your own provider key is off by default and never the fallback when
+          local inference fails. A local failure is reported, not papered over.
         </p>
+        <label style={styles.small}>
+          <input
+            type="checkbox"
+            checked={settings.freeCloudEnabled}
+            onChange={(e) => update({ freeCloudEnabled: e.target.checked })}
+          />{' '}
+          Free cloud gateway (Kilo, keyless) — answers through the shared NVK
+          brain endpoint when the local model is not loaded and no provider key
+          is set. Requests leave this device. Turn it off for local-only.
+        </label>
       </section>
 
       <section style={styles.section}>
