@@ -17,7 +17,14 @@ export type ActionCategory = RestrictedCategory | 'read' | 'generate' | 'local-w
 
 export interface AuthorizationRequest {
   id: string;
-  category: RestrictedCategory;
+  /**
+   * Restricted categories gate financial/payment/publishing/destructive/
+   * external-account actions. 'tool' is a generic tool-call approval
+   * (MCNA slice 1): a confirm/approve-level tool call that is not itself
+   * a restricted-category action. It is never treated as restricted —
+   * isRestricted('tool') is false.
+   */
+  category: RestrictedCategory | 'tool';
   action: string;
   detail: string;
   requestedAt: number;
@@ -67,6 +74,27 @@ export class PermissionGate {
       id: `auth-${Date.now()}-${++this.counter}`,
       category,
       action,
+      detail,
+      requestedAt: Date.now(),
+      status: 'pending',
+    };
+    this.requests.set(req.id, req);
+    this.notify();
+    return req;
+  }
+
+  /**
+   * Generic approval for a confirm/approve-level tool call (MCNA slice 1).
+   * The tool call is not a restricted-category action, so it does not
+   * borrow a restricted category — it gets its own 'tool' request, approved
+   * or denied the same way, one call in one session. approve()/deny()/
+   * isApproved() work on it exactly as on restricted requests.
+   */
+  requestTool(toolName: string, action: string, detail: string): AuthorizationRequest {
+    const req: AuthorizationRequest = {
+      id: `tool-auth-${Date.now()}-${++this.counter}`,
+      category: 'tool',
+      action: `tool:${toolName}:${action}`,
       detail,
       requestedAt: Date.now(),
       status: 'pending',

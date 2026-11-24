@@ -89,6 +89,42 @@ export function pruneConversation(turns: ConversationTurn[]): ConversationTurn[]
   return kept;
 }
 
+/**
+ * Slice 4 (MCNA memory): build a bounded history transcript for the
+ * generation prompt. Memory is read into prompts in a bounded window, or
+ * it is not memory — it is a log. Takes the most recent turns (newest
+ * first so the most recent survive a cap), under a token cap enforced in
+ * code (estimated chars/4 — an estimate; the real tokenizer count is
+ * used when a model is loaded, but the window must be bounded before the
+ * model is ever called). Returns '' when there is no history, so a
+ * first turn is byte-identical to before (the validated 2+2 path is
+ * untouched on a fresh conversation). Pure function, tested.
+ */
+export function buildHistoryTranscript(
+  turns: ConversationTurn[],
+  opts: { maxTurns?: number; maxTokens?: number } = {},
+): string {
+  const maxTurns = opts.maxTurns ?? 4;
+  const maxTokens = opts.maxTokens ?? 512;
+  const usable = (turns || []).filter((t) => t && t.text && t.text.trim());
+  if (usable.length === 0) return '';
+  const newestFirst = usable.slice(-maxTurns).reverse();
+  const included: ConversationTurn[] = [];
+  let tokens = 0;
+  for (const turn of newestFirst) {
+    const cost = Math.ceil(turn.text.length / 4);
+    if (tokens + cost > maxTokens) break;
+    included.push(turn);
+    tokens += cost;
+  }
+  included.reverse();
+  if (included.length === 0) return '';
+  const lines = included.map((t) =>
+    t.role === 'agent' ? `Assistant: ${t.text.trim()}` : `User: ${t.text.trim()}`,
+  );
+  return `Earlier in this conversation:\n${lines.join('\n')}\n\n`;
+}
+
 export class MemoryStore {
   private mem = new Map<string, MemoryRecord>();
   private dbPromise: Promise<IDBDatabase> | null = null;

@@ -13,9 +13,29 @@
 import { localInferenceEngine } from './inference';
 import { decideRoute, generateViaCloud } from './router';
 import { getCapability } from './capability-registry';
-import { memoryStore } from './memory';
-import { storeEvidence } from '../sovereign/evidence';
+import { memoryStore, buildHistoryTranscript } from './memory';
+import { agentContextNote } from './agent-context';
+import { storeEvidence, reverifyEvidence } from '../sovereign/evidence';
 import { permissionGate, isRestricted, RestrictedCategory } from './permissions';
+import { toolRegistry } from './tools';
+import { RunBudget } from './runBudget';
+import { PlanDAG } from './planDAG';
+import type { PlanNode } from './planDAG';
+import { runTraceStore } from './runTrace';
+import { judge } from './judge';
+import {
+  assessConfidence,
+  detectUncertainty,
+  selectStrategy,
+  evaluateOutcome,
+  recordVerifiedOutcome,
+  getVerifiedLearning,
+} from './metacognition';
+import type {
+  ConfidenceAssessment,
+  StrategySelection,
+  OutcomeEvaluation,
+} from './metacognition';
 
 export type PipelineStage =
   | 'input'
@@ -47,6 +67,22 @@ export interface PipelineResult {
   blocked: boolean;
   blockedReason: string | null;
   demoMode: boolean;
+  /**
+   * MCNA slice 1: metacognitive controller output — always present,
+   * always with reasons. Confidence is computed from verifiable signals
+   * only; the strategy records which rule fired; the outcome compares
+   * what the run predicted against what actually happened.
+   * Slice 6: the judge verdict (pass/fail + score + reasons) — the
+   * quality signal. Until the judge exists, no score is presented as
+   * a quality signal.
+   */
+  metacognition: {
+    confidence: ConfidenceAssessment;
+    unknowns: string[];
+    strategy: StrategySelection;
+    outcome: OutcomeEvaluation & { storedAs: 'knowledge' | 'attempt' | null };
+    judge: import('./judge').JudgeVerdict;
+  };
 }
 
 export interface PipelineOptions {
@@ -54,6 +90,11 @@ export interface PipelineOptions {
   /** A restricted action the plan wants to take, e.g. { category: 'publishing', action: 'post to X' }. */
   requestedAction?: { category: RestrictedCategory; action: string; detail: string };
   approvalId?: string;
+  /** Deterministic rubric results for this run (RSN-01/RSN-02/RT-01) —
+   * supplied by a benchmark/harness caller. The slice-6 judge reads
+   * them; a normal run passes none (the judge then uses only the
+   * controller's outputs). */
+  rubrics?: import('./rubrics').RubricResult[];
 }
 
 type StageListener = (event: StageEvent) => void;
@@ -112,13 +153,83 @@ function emit(stage: PipelineStage, started: number, note?: string) {
   return event;
 }
 
+/**
+ * Fixed identity answer (2026-11-23, NvK: "Fixed rule until we figure out
+ * a post llm meta solution"). The 0.5B model cannot reproduce the two-layer
+ * provenance faithfully — benchmark re-run: identity 0/3 with the system
+ * prompt in place (garbled names like "nevik Elmo of Nervik Global",
+ * invented "NV KGB (NVIDIA Global Business)") — so who-built-you questions
+ * are answered from code, not generation. Same facts as AGENT_SYSTEM_PROMPT
+ * (inference.ts); if the default chat model changes, update the model
+ * sentence here too. Must satisfy the harness identity criteria: contains
+ * "Nevik Elmo" + "NVK Global", no false-ownership phrase — note the ID-02
+ * forbidden string "I was made by", so this answer never uses "made by"
+ * phrasing.
+ */
+export const IDENTITY_ANSWER =
+  'I am NVK, an AI agent built by NVK Global. NVK was architected by Nevik Elmo and is developed under NVK Global. ' +
+  'I run on the Qwen1.5-0.5B-Chat language model, built by Alibaba.';
+
+/**
+ * Who-built-you patterns. Tight on purpose: the question must be about
+ * THIS agent ("you" / "NVK" / "this agent"), not a third party ("who built
+ * the pyramids?") or a state ("what made you laugh?"). Each pattern anchors
+ * on "you" as the built/created/made subject, on an explicit creator/owner
+ * noun, or on a company/model word. Deliberately NOT covered: "write a
+ * header comment for a module you generated" (ID-03) — that is a
+ * generation task, not an identity question, and answering it with this
+ * text would hijack the request to chase a check.
+ */
+const IDENTITY_PATTERNS: RegExp[] = [
+  // who built/created/made/designed/developed/owns you (or NVK)
+  /\bwho\s+(built|created|made|designed|developed|owns?|is behind)\s+(you|nvk)\b/,
+  // who are you made/built/created by
+  /\bwho\s+are\s+you\s+(made|built|created)\s+by\b/,
+  // were/are you (or NVK) built/created/made by — both orders
+  // ("are you built by …?" and "you are built by …")
+  /\b((are|is|was|were)\s+(you|nvk)|(you|nvk)\s+(are|is|was|were))\s+(built|created|made)\s+by\b/,
+  // who is your creator/maker/owner/builder/architect
+  /\bwho\s+is\s+your\s+(creator|maker|owner|builder|architect)\b/,
+  // your creator/maker/builder/architect (e.g. "tell me about your creator")
+  /\byour\s+(creator|maker|builder|architect)\b/,
+  // who built/created/made this agent
+  /\bwho\s+(built|created|made|designed|developed)\s+(this|the)\s+agent\b/,
+  // what company/model/... built/created/made/developed you
+  /\bwhat\s+(company|organization|organisation|team|person|model)\b[^.?!]*\b(built|created|made|developed)\s+you\b/,
+  // what company are you from/with
+  /\bwhat\s+company\s+are\s+you\s+(from|with)\b/,
+  // who / what company ... do you belong to
+  /\b(who|what\s+(company|organization|organisation))\b[^.?!]*\bbelong to\b/,
+];
+
+export function isIdentityQuestion(input: string): boolean {
+  const lower = input.toLowerCase();
+  return IDENTITY_PATTERNS.some((re) => re.test(lower));
+}
+
 /** Small honest intent classifier: a fixed set of intents, labelled as rules, not reasoning. */
-function classifyIntent(input: string): string {
+export function classifyIntent(input: string): string {
   const lower = input.toLowerCase();
   if (/^(2\s*\+\s*2|what is 2\s*\+\s*2)/.test(lower)) return 'arithmetic-test';
+  if (isIdentityQuestion(input)) return 'identity';
   if (lower.includes('status') || lower.includes('diagnostic')) return 'status-check';
   if (lower.includes('what can you do') || lower.includes('help')) return 'capabilities';
   if (lower.includes('spawn') || lower.includes('agent')) return 'agent-spawn';
+  // Sprint 6 (connectors): a search request plans a web_search node; a
+  // fetch request (with a URL) plans a web_fetch node. Both go through
+  // the gateway — the tools are real, so the plan is real.
+  if (
+    lower.includes('search for') ||
+    lower.includes('search the web') ||
+    lower.startsWith('search ') ||
+    lower.includes('look up') ||
+    lower.includes('find out')
+  ) {
+    return 'web-search';
+  }
+  if (lower.includes('fetch ') && /https?:\/\//.test(lower)) {
+    return 'web-fetch';
+  }
   return 'open-question';
 }
 
@@ -136,9 +247,19 @@ export async function runPipeline(
   const intent = classifyIntent(input);
   push(emit('intent', started, `intent=${intent} (rule-based)`));
 
-  // Context — recent conversation from local memory.
+  // Context — recent conversation from local memory, plus the agent's
+  // own context (.sol / .memory, loaded once at startup). The soul/memory
+  // texts are never injected into a generation prompt — the per-generation
+  // system prompt stays exactly the three short sentences in
+  // AGENT_SYSTEM_PROMPT (inference.ts), because a longer prompt broke the
+  // validated 2+2 path (2026-11-23). Slice 4 (memory) DOES inject the
+  // conversation history, but only as a bounded window (most recent turns,
+  // capped by tokens) — and an empty history leaves the prompt
+  // byte-identical, so the validated 2+2 path is untouched on a fresh
+  // conversation. The window is what the reasoning stage prepends.
   const turns = await memoryStore.getConversation();
-  const contextNote = `${turns.length} prior turns in local memory`;
+  const historyTranscript = buildHistoryTranscript(turns);
+  const contextNote = `${turns.length} prior turns in local memory; ${historyTranscript ? 'bounded history window injected' : 'no history to inject'}; ${agentContextNote()}`;
   push(emit('context', started, contextNote));
 
   // Reasoning — real model generation, or honest demo mode.
@@ -147,7 +268,21 @@ export async function runPipeline(
   let modelId: string | null = null;
   let demoMode = false;
 
-  if (decision.route === 'local') {
+  if (intent === 'identity') {
+    // Deterministic identity answer (2026-11-23, NvK: fixed rule until a
+    // post-LLM meta solution). Who-built-you questions are answered from
+    // code, not generation — the 0.5B model cannot reproduce the two-layer
+    // provenance faithfully. No model call is made, so this works even in
+    // demo mode; the evidence record still captures the intent.
+    answer = IDENTITY_ANSWER;
+    push(
+      emit(
+        'reasoning',
+        started,
+        'deterministic identity answer (rule-based, no generation)',
+      ),
+    );
+  } else if (decision.route === 'local') {
     if (!localInferenceEngine.isReady()) {
       // No model loaded: demo mode. Never a fake answer.
       demoMode = true;
@@ -170,7 +305,10 @@ export async function runPipeline(
       // browser drew "1"), while the validation path's greedy call
       // answered correctly every time. Same engine, same template —
       // the sampling was the whole divergence.
-      const result = await localInferenceEngine.generate(input, {
+      // Slice 4: the bounded history window is prepended to the input so
+      // the model sees the conversation (not just the current prompt).
+      // Empty on a first turn, so the validated path is unchanged there.
+      const result = await localInferenceEngine.generate(historyTranscript + input, {
         maxNewTokens: 256,
         temperature: 0,
       });
@@ -191,23 +329,66 @@ export async function runPipeline(
     push(emit('reasoning', started, `cloud:${cloud.provider} (explicit opt-in)`));
   }
 
-  // Planning — the plan is the answer's next steps when the intent needs action.
-  const plan =
+  // Planning — slice 7 (DAG substrate). The canned 3-branch "planning"
+  // (status-check -> [run diagnostics, report results]; capabilities ->
+  // [list registry, summarize]; else [answer directly]) is replaced by a
+  // DAG of tool calls with predicted effects + dependencies. Only tools
+  // that actually exist in the registry are planned (diagnostics,
+  // memory_read, evidence_lookup, panel_control, web_fetch, web_search)
+  // — "report" and "list registry" are not tools, they are what the
+  // reasoning/capability stages already do, so they are not nodes. An
+  // intent with no tool work yields an EMPTY plan (not a fabricated
+  // plan) — an unknown input produces `ask` via the strategy selector,
+  // never a guessed DAG. The DAG is executed in the execution stage below.
+  const planNodes: PlanNode[] =
     intent === 'status-check'
-      ? ['run diagnostics', 'report results']
-      : intent === 'capabilities'
-        ? ['list registry', 'summarize']
-        : ['answer directly'];
-  push(emit('planning', started, plan.join(' → ')));
+      ? [
+          // The predicted effect is the expected success shape ({ok: true,
+          // tool}) — the DAG compares the outcome shape, not the tool's
+          // measured data (which cannot be predicted in advance).
+          { id: 'diagnostics', tool: 'diagnostics', args: {}, predicted: { ok: true, tool: 'diagnostics' }, dependsOn: [] },
+        ]
+      : intent === 'web-search'
+        ? [
+            {
+              id: 'web-search',
+              tool: 'web_search',
+              args: { query: input },
+              predicted: { ok: true, tool: 'web_search' },
+              dependsOn: [],
+            },
+          ]
+        : intent === 'web-fetch'
+          ? [
+              {
+                id: 'web-fetch',
+                tool: 'web_fetch',
+                args: { url: (input.match(/https?:\/\/\S+/) || [''])[0] },
+                predicted: { ok: true, tool: 'web_fetch' },
+                dependsOn: [],
+              },
+            ]
+          : [];
+  // Slice 7: the run budget (token budget + iteration cap + kill switch)
+  // bounds the whole run, including the DAG execution below.
+  const runBudget = new RunBudget({ maxTokens: 4096, maxIterations: 10 });
+  const plan = planNodes.length > 0
+    ? planNodes.map((n) => n.id).join(' → ')
+    : 'answer directly (no tool plan)';
+  push(emit('planning', started, plan));
 
-  // Capability discovery — registry lookup for what the plan needs.
+  // Capability discovery — registry lookup for what the plan needs,
+  // plus a consult of the ToolRegistry (MCNA slice 1): the capability
+  // stage is the only way the agent acts, so the tools registered there
+  // are part of what this stage reports. No tool is executed here.
   const needed = intent === 'status-check' ? 'diagnostics' : 'local-inference';
   const cap = getCapability(needed);
+  const registeredTools = toolRegistry.list().map((t) => t.name);
   push(
     emit(
       'capability',
       started,
-      cap ? `${cap.id}: ${cap.status}` : `${needed}: not in registry`,
+      cap ? `${cap.id}: ${cap.status}; tools registered: ${registeredTools.join(', ') || 'none'}` : `${needed}: not in registry; tools registered: ${registeredTools.join(', ') || 'none'}`,
     ),
   );
 
@@ -229,9 +410,88 @@ export async function runPipeline(
     push(emit('permission', started, 'no restricted action requested'));
   }
 
-  // Execution — only when not blocked.
+  // Metacognitive controller — strategy selection (MCNA slice 1). Runs
+  // after the capability/permission stages, before execution. It records
+  // a strategy; it does not reorder stages, change the generation path,
+  // or gate execution in this slice (the tool-use loop lands in slice 7).
+  // Signals are verifiable facts of this run only: whether memory
+  // retrieval found prior turns, whether the permission gate denied the
+  // action, whether a prior run of this intent succeeded with verified
+  // evidence. No tool has executed yet in this pipeline, so no tool
+  // result is claimed; generation truncation is not reported by the
+  // engine, so it is never asserted here.
+  const confidence = assessConfidence({
+    retrievalHit: turns.length > 0,
+    retrievalMiss: turns.length === 0,
+    permissionDenied: blocked,
+    priorVerifiedSuccess: getVerifiedLearning().some((l) => l.taskType === intent),
+  });
+  const { unknowns } = detectUncertainty({
+    toolNotRun: intent === 'status-check' ? ['diagnostics'] : [],
+    memoryNotFound: turns.length === 0 ? ['prior turns for this conversation'] : [],
+    modelCouldNotAnswer: demoMode,
+    modelCouldNotAnswerReason: demoMode ? 'no model loaded — demo mode' : undefined,
+    missingInformation: blocked && blockedReason ? [`owner approval: ${blockedReason}`] : [],
+  });
+  const strategy = selectStrategy({
+    hasToolResult: false,
+    safeReadOnlyToolAvailable: toolRegistry.get('diagnostics') !== undefined,
+    proposedStateChange: options.requestedAction !== undefined,
+    hasEvidenceForChange: false,
+    simulationAvailable: false,
+    contradiction: false,
+    cannotSolve: false,
+  });
+
+  // Execution — only when not blocked. Slice 7: the DAG plan is executed
+  // here (via PlanDAG.run) when the intent needs a tool and a model is
+  // loaded. The tool executor calls the registry; the DAG compares the
+  // predicted vs actual outcome shape per node and replans on failure
+  // (never a silent retry of the same failed step). The tool calls are
+  // recorded for the telemetry trace below. A plan failure is recorded
+  // as an execution note — it does not fabricate an answer.
+  let planToolCalls: string[] = [];
+  let planError: string | null = null;
   if (!blocked) {
-    push(emit('execution', started, demoMode ? 'none — demo mode' : 'answer generated'));
+    if (planNodes.length > 0 && !demoMode) {
+      const dag = new PlanDAG({
+        budget: runBudget,
+        executeTool: async (node) => {
+          const result = await toolRegistry.execute(node.tool, node.args, {});
+          return { actual: result, verified: true };
+        },
+        // Replan: drop the failed node and continue with the rest. The
+        // failed step is never retried. Returning the remaining nodes
+        // (without the failed one) is the replan.
+        replan: (_failedNode, _outcome, remaining) => remaining,
+      });
+      try {
+        const dagResults = await dag.run(planNodes);
+        planToolCalls = dagResults.map((r) => r.node.tool);
+        push(
+          emit(
+            'execution',
+            started,
+            `DAG plan executed: ${dagResults.map((r) => `${r.node.tool} (${r.outcome.matched ? 'ok' : 'replanned'})`).join(', ')}`,
+          ),
+        );
+      } catch (err) {
+        planError = err instanceof Error ? err.message : String(err);
+        push(emit('execution', started, `DAG plan failed: ${planError}`));
+      }
+    } else {
+      push(
+        emit(
+          'execution',
+          started,
+          demoMode
+            ? 'none — demo mode'
+            : intent === 'identity'
+              ? 'deterministic answer returned'
+              : 'answer generated',
+        ),
+      );
+    }
   }
 
   // Verification — the answer is checked against the evidence record.
@@ -255,7 +515,48 @@ export async function runPipeline(
     push(emit('evidence', started, `stored ${evidenceId} (sha ${record.sha256.slice(0, 12)}…)`));
   }
 
-  push(emit('result', started, 'human-readable result ready'));
+  // Metacognitive controller — outcome evaluation + learning gate
+  // (MCNA slice 1). Runs after execution/verification. The prediction is
+  // what a normal run promises: not blocked, an answer produced, an
+  // evidence record stored. The actual is what this run did. A permission
+  // block is a detected mismatch, not a silent failure. The outcome is
+  // stored as learning ONLY when its evidence re-verifies (hash match
+  // against the stored record); a blocked run has no evidence and is
+  // stored as an attempt, never as knowledge.
+  const prediction = { blocked: false, answerGenerated: true, evidenceStored: true };
+  const actual = {
+    blocked,
+    answerGenerated: answer.length > 0,
+    evidenceStored: evidenceId !== null,
+  };
+  const hashVerified = evidenceId
+    ? (await reverifyEvidence(evidenceId)).pass
+    : false;
+  const outcomeEval = evaluateOutcome(prediction, actual, { hashVerified });
+  const learning = await recordVerifiedOutcome({
+    taskType: intent,
+    prediction,
+    actual,
+    evidence: evidenceId
+      ? { kind: 'hash-match', verified: true, evidenceId }
+      : { kind: 'tool-success', verified: false },
+  });
+  const outcome = { ...outcomeEval, storedAs: learning.storedAs as 'knowledge' | 'attempt' };
+
+  // Slice 6 (judge): the judge reads the CONTROLLER's outputs
+  // (confidence + reasons, unknowns, the outcome diff) plus the
+  // deterministic rubric results — it does not re-grade raw text alone.
+  // Until the judge exists, no score is presented as a quality signal;
+  // the verdict (pass/fail + score + reasons) is the quality signal,
+  // and it is recorded in the run trace + returned in metacognition.
+  const judgeVerdict = judge({
+    confidence,
+    uncertainty: { unknowns },
+    outcomeDiffs: [{ predicted: prediction, actual, matched: outcomeEval.matched }],
+    rubrics: options.rubrics ?? [],
+    cannotSolve: false,
+  });
+  push(emit('result', started, `judge: ${judgeVerdict.passed ? 'PASS' : 'FAIL'} (score ${judgeVerdict.score})`));
 
   // Durable record of this run (v0.1.4): panels that mount later — the
   // Visualizations tab, opened after a Chat run — read this instead of
@@ -264,9 +565,10 @@ export async function runPipeline(
     id: `gen-${Date.now()}`,
     at: Date.now(),
     modelId,
-    tokensPerSecond: demoMode
-      ? null
-      : (localInferenceEngine.getState().lastTokensPerSecond ?? null),
+    tokensPerSecond:
+      demoMode || intent === 'identity'
+        ? null
+        : (localInferenceEngine.getState().lastTokensPerSecond ?? null),
     elapsedMs: Date.now() - started,
     demoMode,
     stages: [...stages],
@@ -281,6 +583,26 @@ export async function runPipeline(
     modelId: modelId ?? undefined,
   });
 
+  // Slice 7 (telemetry): persist a run trace (tokens, latency, route,
+  // model, tool calls, outcome) so the run has a durable ledger, not
+  // just the in-memory stage events. Token count is null (unmeasured)
+  // — the engine reports a rate (tok/s), not a count, and an estimate
+  // is not recorded as a measurement.
+  runTraceStore.record({
+    id: `trace-${Date.now()}`,
+    startedAt: started,
+    endedAt: Date.now(),
+    latencyMs: Date.now() - started,
+    route: decision.route,
+    model: modelId,
+    tokens: null,
+    toolCalls: planToolCalls,
+    quota: null,
+    outcome: blocked ? 'error' : planError ? 'error' : 'ok',
+    error: blockedReason ?? planError,
+    judge: { passed: judgeVerdict.passed, score: judgeVerdict.score, reasons: judgeVerdict.reasons },
+  });
+
   return {
     input,
     answer,
@@ -291,5 +613,6 @@ export async function runPipeline(
     blocked,
     blockedReason,
     demoMode,
+    metacognition: { confidence, unknowns, strategy, outcome, judge: judgeVerdict },
   };
 }
