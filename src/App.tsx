@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { OrbHost, OrbPanel } from './experience/orb/OrbHost';
 import { Chat } from './experience/chat/Chat';
 import { SettingsPanel } from './experience/chat/SettingsPanel';
@@ -7,6 +7,13 @@ import { AgentsPanel } from './experience/chat/AgentsPanel';
 import { EvidencePanel } from './experience/chat/EvidencePanel';
 import { VisualizersPanel } from './experience/visualizers/VisualizersPanel';
 import { HERO_CAPABILITIES, EXAMPLE_PROMPTS } from './experience/hero-content';
+import { settingsStore } from './intelligence/settings';
+import {
+  AgentRelayClient,
+  AGENT_DESKTOP_ID,
+  getCurrentOrbState,
+} from './intelligence/relayAdapter';
+import { localInferenceEngine } from './intelligence/inference';
 
 const TABS: { id: OrbPanel; label: string }[] = [
   { id: 'chat', label: 'Chat' },
@@ -20,6 +27,53 @@ const TABS: { id: OrbPanel; label: string }[] = [
 export default function App() {
   const [panel, setPanel] = useState<OrbPanel>('chat');
   const [chatPrefill, setChatPrefill] = useState<{ text: string; nonce: number } | null>(null);
+  const [relaySettings, setRelaySettings] = useState(settingsStore.get());
+  const [relayClient, setRelayClient] = useState<AgentRelayClient | null>(null);
+
+  // The relay client reads live orb state + loaded model through this
+  // getter (the same stores the App reads) — the adapter stays
+  // testable, the App owns the live state.
+  const getLiveStatus = useCallback(
+    () => ({
+      orbState: getCurrentOrbState(),
+      model: localInferenceEngine.getState().activeModelId ?? 'none loaded',
+    }),
+    [],
+  );
+
+  useEffect(
+    () => settingsStore.subscribe(() => setRelaySettings(settingsStore.get())),
+    [],
+  );
+
+  // ONE relay client, only while the relay is enabled AND the URL +
+  // desktop token are both present. Created + started here, stopped on
+  // disable / unmount / URL or token change (the effect cleanup stops
+  // the previous client before a new one is built). Never started when
+  // unconfigured — a silent dead toggle is not a working relay.
+  useEffect(() => {
+    const { relayEnabled, relayUrl, relayDesktopToken } = relaySettings;
+    if (!relayEnabled || !relayUrl.trim() || !relayDesktopToken) {
+      setRelayClient(null);
+      return;
+    }
+    const client = new AgentRelayClient({
+      relayUrl: relayUrl.trim(),
+      desktopId: AGENT_DESKTOP_ID,
+      desktopToken: relayDesktopToken,
+      getLiveStatus,
+    });
+    client.start();
+    setRelayClient(client);
+    return () => {
+      client.stop();
+    };
+  }, [
+    relaySettings.relayEnabled,
+    relaySettings.relayUrl,
+    relaySettings.relayDesktopToken,
+    getLiveStatus,
+  ]);
 
   // Tapping an example prompt drops it into the chat composer and opens chat.
   const askExample = (text: string) => {
@@ -90,7 +144,7 @@ export default function App() {
           {panel === 'agents' && <AgentsPanel />}
           {panel === 'evidence' && <EvidencePanel />}
           {panel === 'diagnostics' && <DiagnosticsPanel />}
-          {panel === 'settings' && <SettingsPanel />}
+          {panel === 'settings' && <SettingsPanel relayClient={relayClient} />}
         </div>
       </main>
 

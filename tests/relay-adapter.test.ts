@@ -12,10 +12,27 @@ import {
   handleRejectCommand,
   handleTaskCommand,
   handleStatusCommand,
+  buildRelayStatus,
   AGENT_RELAY_HANDLERS,
+  AgentRelayClient,
+  AGENT_DESKTOP_ID,
 } from '../src/intelligence/relayAdapter';
 import { permissionGate } from '../src/intelligence/permissions';
 import { IDENTITY_ANSWER } from '../src/intelligence/pipeline';
+import { storeEvidence } from '../src/sovereign/evidence';
+
+type CapturedCall = { url: string; body: Record<string, unknown> };
+
+function fakeFetch(
+  calls: CapturedCall[],
+  commands: unknown[] = [],
+): typeof fetch {
+  return (async (url: string, init?: { body?: string }) => {
+    const body = init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+    calls.push({ url, body });
+    return { json: async () => ({ ok: true, commands }) };
+  }) as unknown as typeof fetch;
+}
 
 test('the pairing code is 6 digits and never starts with 0', () => {
   for (let i = 0; i < 100; i++) {
@@ -81,4 +98,113 @@ test('the handler table covers the relay command set (except evidence/history, w
   for (const cmd of ['chat', 'approve', 'reject', 'status', 'start-task', 'pause-task', 'cancel-task']) {
     assert.equal(typeof AGENT_RELAY_HANDLERS[cmd], 'function');
   }
+});
+
+test('getStatus returns real diagnostics + pending approvals + recent evidence, most recent first', async () => {
+  const first = await storeEvidence({
+    input: 'what is 2+2',
+    answer: '4',
+    modelId: null,
+    route: 'test',
+    demoMode: true,
+    intent: 'test-intent',
+  });
+  const second = await storeEvidence({
+    input: 'who are you',
+    answer: IDENTITY_ANSWER,
+    modelId: null,
+    route: 'test',
+    demoMode: true,
+    intent: 'test-intent',
+  });
+  const req = permissionGate.requestTool('web_search', 'search', 'search for NVK smartwatch');
+  try {
+    const status = await buildRelayStatus(() => ({
+      orbState: 'thinking',
+      model: 'Xenova/Qwen1.5-0.5B-Chat',
+    }));
+    assert.equal(status.orbState, 'thinking');
+    assert.equal(status.model, 'Xenova/Qwen1.5-0.5B-Chat');
+    // Diagnostics are the real runDiagnostics overall, not a placeholder.
+    assert.ok(['pass', 'fail', 'not-wired'].includes(status.diagnostics));
+    assert.ok(status.pendingApprovals.some((p) => p.id === req.id));
+    // No task engine yet — an honest empty, never fabricated tasks.
+    assert.deepEqual(status.tasks, []);
+    // Most recent evidence first, bounded, with type/timestamp/summary.
+    const newest = status.evidence[0];
+    assert.equal(newest.timestamp, second.at);
+    assert.equal(newest.type, 'test-intent');
+    assert.ok(newest.summary.includes('who are you'));
+    assert.ok(status.evidence.some((e) => e.timestamp === first.at));
+    assert.ok(status.evidence.length <= 10);
+  } finally {
+    permissionGate.deny(req.id);
+  }
+});
+
+test('postStatus posts the live status to /desktop/status', async () => {
+  const calls: CapturedCall[] = [];
+  const client = new AgentRelayClient({
+    relayUrl: 'https://relay.example/',
+    desktopId: AGENT_DESKTOP_ID,
+    desktopToken: 'tok',
+    getLiveStatus: () => ({ orbState: 'idle', model: 'none loaded' }),
+    fetchImpl: fakeFetch(calls),
+  });
+  await client.postStatus();
+  const statusCall = calls.find((c) => c.url.endsWith('/desktop/status'));
+  assert.ok(statusCall, 'expected a call to /desktop/status');
+  assert.equal(statusCall.body.desktopId, 'nvk-agent');
+  const status = statusCall.body.status as Record<string, unknown>;
+  assert.equal(status.model, 'none loaded');
+  assert.equal(status.orbState, 'idle');
+  assert.deepEqual(status.tasks, []);
+});
+
+test('pollOnce posts the live status after handling commands', async () => {
+  const calls: CapturedCall[] = [];
+  const client = new AgentRelayClient({
+    relayUrl: 'https://relay.example',
+    desktopId: AGENT_DESKTOP_ID,
+    desktopToken: 'tok',
+    getLiveStatus: () => ({ orbState: 'idle', model: 'none loaded' }),
+    fetchImpl: fakeFetch(calls, []),
+  });
+  const res = await client.pollOnce();
+  assert.equal(res.ok, true);
+  const commandsIdx = calls.findIndex((c) => c.url.endsWith('/desktop/commands'));
+  const statusIdx = calls.findIndex((c) => c.url.endsWith('/desktop/status'));
+  assert.ok(commandsIdx >= 0, 'expected a commands fetch');
+  assert.ok(statusIdx > commandsIdx, 'expected the status post after the commands fetch');
+});
+
+test('registerPairing sends the code + the owner-chosen permissions', async () => {
+  const calls: CapturedCall[] = [];
+  const client = new AgentRelayClient({
+    relayUrl: 'https://relay.example',
+    desktopId: AGENT_DESKTOP_ID,
+    desktopToken: 'tok',
+    fetchImpl: fakeFetch(calls),
+  });
+  await client.registerPairing('123456', ['monitor', 'approve']);
+  const call = calls.find((c) => c.url.endsWith('/desktop/register-pairing'));
+  assert.ok(call);
+  assert.equal(call.body.code, '123456');
+  assert.deepEqual(call.body.permissions, ['monitor', 'approve']);
+});
+
+test('start / stop report the running state the UI reads', () => {
+  const client = new AgentRelayClient({
+    relayUrl: 'https://relay.example',
+    desktopId: AGENT_DESKTOP_ID,
+    desktopToken: 'tok',
+    pollMs: 60_000,
+  });
+  assert.equal(client.isRunning(), false);
+  client.start();
+  assert.equal(client.isRunning(), true);
+  client.start(); // second start is a no-op, not a second loop
+  assert.equal(client.isRunning(), true);
+  client.stop();
+  assert.equal(client.isRunning(), false);
 });
