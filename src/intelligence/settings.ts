@@ -26,9 +26,23 @@ export interface AgentSettings {
    * sensitive work stays local. Turn it off in Settings for local-only.
    */
   freeCloudEnabled: boolean;
+  /**
+   * Phone control via the NVK relay (Sprint 8). OFF by default.
+   * relayUrl is the relay Worker URL the owner pastes once it is
+   * deployed — empty means not configured. relayDesktopToken is the
+   * desktop token: session-only by default (kept in memory + this
+   * tab's sessionStorage), persisted to localStorage only when
+   * persistRelayToken is explicitly opted in — the same pattern as
+   * providerKey / persistKey above.
+   */
+  relayEnabled: boolean;
+  relayUrl: string;
+  relayDesktopToken: string | null;
+  persistRelayToken: boolean;
 }
 
 const SETTINGS_KEY = 'nvk-agent:settings';
+const RELAY_TOKEN_SESSION_KEY = 'nvk-agent:relay-token';
 const DEFAULTS: AgentSettings = {
   activeModelId: INFERENCE_MODELS[0].id,
   cloudEnabled: false,
@@ -37,7 +51,30 @@ const DEFAULTS: AgentSettings = {
   persistKey: false,
   downloadConsentGiven: false,
   freeCloudEnabled: true,
+  relayEnabled: false,
+  relayUrl: '',
+  relayDesktopToken: null,
+  persistRelayToken: false,
 };
+
+function readSessionRelayToken(): string | null {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    return sessionStorage.getItem(RELAY_TOKEN_SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionRelayToken(token: string | null): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    if (token) sessionStorage.setItem(RELAY_TOKEN_SESSION_KEY, token);
+    else sessionStorage.removeItem(RELAY_TOKEN_SESSION_KEY);
+  } catch {
+    /* session storage blocked — the in-memory token still applies */
+  }
+}
 
 function readStored(): Partial<AgentSettings> {
   try {
@@ -46,6 +83,7 @@ function readStored(): Partial<AgentSettings> {
     const parsed = JSON.parse(raw) as Partial<AgentSettings>;
     // A stored key is only honoured when the owner explicitly opted in.
     if (!parsed.persistKey) delete parsed.providerKey;
+    if (!parsed.persistRelayToken) delete parsed.relayDesktopToken;
     return parsed;
   } catch {
     return {};
@@ -53,7 +91,21 @@ function readStored(): Partial<AgentSettings> {
 }
 
 export class SettingsStore {
-  private settings: AgentSettings = { ...DEFAULTS, ...readStored() };
+  // A session-only relay token (this tab's sessionStorage) is honoured
+  // on load when no persisted token was opted in — same as the
+  // provider key, but sessionStorage survives a reload of the tab.
+  // A persisted (opted-in) token always wins over a session one.
+  private settings: AgentSettings = (() => {
+    const stored = readStored();
+    const sessionToken = stored.persistRelayToken ? null : readSessionRelayToken();
+    return {
+      ...DEFAULTS,
+      ...stored,
+      ...(sessionToken
+        ? { relayDesktopToken: sessionToken, persistRelayToken: false }
+        : {}),
+    };
+  })();
   private listeners = new Set<() => void>();
 
   subscribe(fn: () => void): () => void {
@@ -82,11 +134,42 @@ export class SettingsStore {
     // Persist everything EXCEPT a provider key the owner did not opt to keep.
     const toStore: AgentSettings = { ...this.settings };
     if (!toStore.persistKey) toStore.providerKey = null;
+    // Same for the relay token: localStorage only when opted in.
+    if (!toStore.persistRelayToken) toStore.relayDesktopToken = null;
     try {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(toStore));
     } catch {
       /* storage blocked — in-memory settings still apply */
     }
+    // A session-only relay token lives in this tab's sessionStorage so
+    // it survives a reload without ever touching localStorage.
+    writeSessionRelayToken(
+      this.settings.persistRelayToken ? null : this.settings.relayDesktopToken,
+    );
+    this.notify();
+  }
+
+  /**
+   * Restore factory defaults and persist them. Used by "Clear all local
+   * data" (2026-11-23): the old path merged a partial patch
+   * ({cloudEnabled, providerKey, persistKey}) over the live settings, so
+   * freeCloudEnabled, activeModelId and downloadConsentGiven always
+   * survived a clear — and update() re-wrote the settings key to
+   * localStorage immediately after clearAll() had deleted it, so the
+   * settings were never actually cleared at all.
+   *
+   * Note the default has the free cloud gateway ON, so after a true
+   * reset the Kilo toggle is still checked — that is the default, not
+   * leftover data. The Settings panel says so in its confirmation note.
+   */
+  reset(): void {
+    this.settings = { ...DEFAULTS };
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
+    } catch {
+      /* storage blocked — in-memory defaults still apply */
+    }
+    writeSessionRelayToken(null);
     this.notify();
   }
 
@@ -103,6 +186,22 @@ export class SettingsStore {
 
   clearKey(): void {
     this.update({ providerKey: null, persistKey: false });
+  }
+
+  /** Session-only relay token: set for this session (+ this tab's sessionStorage), never written to localStorage. */
+  setSessionRelayToken(token: string): void {
+    this.settings = {
+      ...this.settings,
+      relayDesktopToken: token,
+      persistRelayToken: false,
+    };
+    writeSessionRelayToken(token);
+    this.notify();
+  }
+
+  clearRelayToken(): void {
+    this.update({ relayDesktopToken: null, persistRelayToken: false });
+    writeSessionRelayToken(null);
   }
 }
 

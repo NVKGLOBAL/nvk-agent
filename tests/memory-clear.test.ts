@@ -42,3 +42,52 @@ test('clearAll: works when the Cache API is absent', async () => {
   await memoryStore.clearAll();
   assert.equal(await memoryStore.get('probe2'), null);
 });
+
+test('clearAll: returns true when the store verifies empty', async () => {
+  // 2026-11-23: clearAll() now verifies through the same read path the
+  // chat UI uses and reports false when data survived, instead of
+  // returning void and leaving the caller to assume success.
+  await memoryStore.set('probe3', 'value');
+  assert.equal(await memoryStore.clearAll(), true);
+  assert.equal(await memoryStore.get('probe3'), null);
+});
+
+test('clearAll: sweeps localStorage keys with the nvk-agent: prefix', async () => {
+  // Install a minimal localStorage fake (Node has none). Stored keys are
+  // mirrored as own enumerable properties so Object.keys() sees them,
+  // exactly as clearAll() enumerates them in the browser.
+  const data = new Map<string, string>([
+    ['nvk-agent:conversation', JSON.stringify([{ role: 'user', text: 'hi', at: 1 }])],
+    ['nvk-agent:settings', JSON.stringify({})],
+    ['unrelated-key', 'keep me'],
+  ]);
+  const fake: Record<string, unknown> = {
+    getItem: (k: string) => data.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      data.set(k, v);
+      fake[k] = v;
+    },
+    removeItem: (k: string) => {
+      data.delete(k);
+      delete fake[k];
+    },
+  };
+  for (const k of data.keys()) fake[k] = data.get(k);
+  const holder = globalThis as { localStorage?: unknown };
+  const prev = holder.localStorage;
+  holder.localStorage = fake;
+  try {
+    const stored = await memoryStore.get<{ role: string; text: string; at: number }[]>(
+      'conversation',
+    );
+    assert.equal(stored?.[0]?.text, 'hi');
+    assert.equal(await memoryStore.clearAll(), true);
+    assert.equal(data.has('nvk-agent:conversation'), false);
+    assert.equal(data.has('nvk-agent:settings'), false);
+    assert.equal(data.get('unrelated-key'), 'keep me');
+    assert.equal(await memoryStore.get('conversation'), null);
+  } finally {
+    if (prev === undefined) delete holder.localStorage;
+    else holder.localStorage = prev;
+  }
+});

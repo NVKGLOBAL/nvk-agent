@@ -138,7 +138,14 @@ export class MemoryStore {
         req.result.createObjectStore(STORE, { keyPath: 'key' });
       };
       req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+      req.onerror = () => {
+        // A failed open must not poison every later call: the rejected
+        // promise used to stay cached in dbPromise forever, so every
+        // later get/set/clear silently fell through to (or skipped)
+        // the other store. Drop it so the next call retries the open.
+        this.dbPromise = null;
+        reject(req.error);
+      };
     });
     return this.dbPromise;
   }
@@ -183,6 +190,20 @@ export class MemoryStore {
           req.onsuccess = () => resolve();
           req.onerror = () => reject(req.error);
         });
+        // Write-through mirror (2026-11-23): get() reads IndexedDB
+        // first and only falls back to localStorage, while set() used
+        // to write exactly one store — so the two copies could diverge
+        // and the older one silently shadow the newer one. A fresh
+        // exchange written to the fallback copy vanished on reload
+        // while older history (in IndexedDB) survived. Mirror
+        // best-effort; a failed mirror never breaks the write.
+        if (lsAvailable()) {
+          try {
+            localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
+          } catch {
+            /* ignore */
+          }
+        }
         return;
       } catch {
         /* fall through to localStorage */
@@ -218,7 +239,13 @@ export class MemoryStore {
     return pruneConversation(turns);
   }
 
-  async clearAll(): Promise<void> {
+  /**
+   * Clear everything this app stored on the device and verify the clear
+   * through the same read path the UI uses. Returns true only when the
+   * conversation the chat reads is actually gone afterwards — a clear
+   * that silently skipped a store must report false, not pretend success.
+   */
+  async clearAll(): Promise<boolean> {
     this.mem.clear();
     if (idbAvailable()) {
       try {
@@ -230,7 +257,31 @@ export class MemoryStore {
           req.onerror = () => reject(req.error);
         });
       } catch {
-        /* ignore */
+        // A failed open/clear must not stop the other stores being
+        // cleared below, and must not leave a poisoned cached promise
+        // behind (see openDb).
+        this.dbPromise = null;
+      }
+      // Belt-and-braces: drop the whole database so no record survives
+      // in a store the clear above could not reach. Fire-and-forget: a
+      // blocked delete (another tab holding the DB) must never hang the
+      // clear — the store-clear above already emptied the records. The
+      // cached connection is dropped once the delete settles, so the
+      // next open re-creates a fresh database instead of reusing a
+      // connection to a deleted one.
+      try {
+        const del = indexedDB.deleteDatabase(DB_NAME);
+        del.onsuccess = () => {
+          this.dbPromise = null;
+        };
+        del.onerror = () => {
+          this.dbPromise = null;
+        };
+        del.onblocked = () => {
+          this.dbPromise = null;
+        };
+      } catch {
+        this.dbPromise = null;
       }
     }
     if (lsAvailable()) {
@@ -250,6 +301,14 @@ export class MemoryStore {
       } catch {
         /* ignore */
       }
+    }
+    // Verify, don't assert: read the conversation back through the same
+    // path the chat UI uses. false = some data survived — the caller
+    // must say so instead of showing "cleared".
+    try {
+      return (await this.get<ConversationTurn[]>('conversation')) === null;
+    } catch {
+      return false;
     }
   }
 }

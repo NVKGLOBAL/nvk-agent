@@ -10,6 +10,7 @@ import { localInferenceEngine } from './inference';
 import { modelRegistry } from './model-registry';
 import { registrySelfCheck } from './capability-registry';
 import { outboundCounter } from './outbound';
+import { settingsStore } from './settings';
 
 export type CheckResult = 'pass' | 'fail' | 'not-wired';
 
@@ -36,6 +37,21 @@ async function storageEstimate(): Promise<string> {
   }
 }
 
+/**
+ * Detail line for the "Local model loaded" check. The old text always said
+ * "Chat is in demo mode" whenever no local model was loaded — wrong since
+ * the free cloud gateway (2026-11-23): with the gateway on, the chat
+ * answers through Kilo and is NOT in demo mode. demoMode uses the same
+ * definition as Chat.tsx (no local model, no provider cloud, gateway off).
+ * The check result stays FAIL — no local model IS loaded — only the
+ * "demo mode" claim is corrected. Pure function, tested.
+ */
+export function localModelDetail(engineStatus: string, demoMode: boolean): string {
+  return demoMode
+    ? `No model loaded (state: ${engineStatus}). Chat is in demo mode.`
+    : `No model loaded (state: ${engineStatus}). Chat is answering through the free cloud gateway (Kilo) — not demo mode.`;
+}
+
 export async function runDiagnostics(): Promise<DiagnosticsReport> {
   const checks: DiagnosticCheck[] = [];
   const engine = localInferenceEngine.getState();
@@ -54,10 +70,13 @@ export async function runDiagnostics(): Promise<DiagnosticsReport> {
       detail: engine.statusMessage,
     });
   } else {
+    const settings = settingsStore.get();
+    const demoMode =
+      engine.status !== 'ready' && !settings.cloudEnabled && !settings.freeCloudEnabled;
     checks.push({
       name: 'Local model loaded',
       result: 'fail',
-      detail: `No model loaded (state: ${engine.status}). Chat is in demo mode.`,
+      detail: localModelDetail(engine.status, demoMode),
     });
   }
 
