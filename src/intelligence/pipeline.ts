@@ -20,7 +20,7 @@ import { permissionGate, isRestricted, RestrictedCategory } from './permissions'
 import { toolRegistry } from './tools';
 import { RunBudget } from './runBudget';
 import { PlanDAG } from './planDAG';
-import type { PlanNode } from './planDAG';
+import type { PlanNode, NodeResult } from './planDAG';
 import { runTraceStore } from './runTrace';
 import { judge } from './judge';
 import {
@@ -181,6 +181,13 @@ export const IDENTITY_ANSWER =
  * text would hijack the request to chase a check.
  */
 const IDENTITY_PATTERNS: RegExp[] = [
+  // who are you / what are you (the most natural identity question — a
+  // bare "who are you" must answer from the fixed rule, not fall through
+  // to the model or to demo mode). Retest #14 (2026-11-23): the live
+  // Agent answered "who are you" with the demo-mode disclaimer because
+  // no pattern matched a bare "who are you".
+  /\bwho\s+are\s+you\b/,
+  /\bwhat\s+are\s+you\b/,
   // who built/created/made/designed/developed/owns you (or NVK)
   /\bwho\s+(built|created|made|designed|developed|owns?|is behind)\s+(you|nvk)\b/,
   // who are you made/built/created by
@@ -233,6 +240,56 @@ export function classifyIntent(input: string): string {
   return 'open-question';
 }
 
+/**
+ * Compose the answer for a tool intent from the DAG results.
+ *
+ * Retest #14 (2026-11-23): the live Agent answered status-check and
+ * web-search with the demo-mode disclaimer because the pipeline only ran
+ * the DAG when a model was loaded — and the tools do not need a model.
+ * The diagnostics tool measures real state, the gateway tools call the
+ * real gateway. So a tool intent's answer is composed HERE, from the
+ * tools' measured data, model or no model. A tool that cannot serve the
+ * request returns an honest unavailable (never a fabricated result), and
+ * that honest unavailable IS the answer.
+ *
+ * Exported for testing (it is a pure function of the intent + the DAG
+ * results — no model, no network, no DOM).
+ */
+export function composeToolAnswer(intent: string, results: NodeResult[]): string {
+  const first = results[0];
+  const data = (first?.data ?? null) as Record<string, unknown> | null;
+  if (!data || typeof data !== 'object') {
+    return 'The tool ran, but it did not return a result I can report.';
+  }
+  if (intent === 'status-check') {
+    const checks = (data.checks as { name: string; result: string; detail: string }[] | undefined) ?? [];
+    const overall = String(data.overall ?? 'unknown').toUpperCase();
+    if (checks.length === 0) return `Diagnostics: overall ${overall}.`;
+    const lines = checks.map((c) => `${c.name}: ${String(c.result).toUpperCase()} — ${c.detail}`);
+    return `Diagnostics (run just now): overall ${overall}.\n${lines.join('\n')}`;
+  }
+  if (intent === 'web-search') {
+    if (data.available === false) {
+      return `I could not search right now — ${String(data.reason ?? 'the search provider could not be reached')}.`;
+    }
+    const list = (data.results as { title: string; url: string }[] | undefined) ?? [];
+    if (list.length === 0) return `No results for "${String(data.query ?? '')}".`;
+    return list
+      .slice(0, 5)
+      .map((r) => `${r.title} — ${r.url}`)
+      .join('\n');
+  }
+  if (intent === 'web-fetch') {
+    if (data.available === false) {
+      return `I could not fetch that page — ${String(data.reason ?? 'the gateway could not serve it')}.`;
+    }
+    const text = String(data.text ?? '');
+    const head = text.slice(0, 1000);
+    return `Fetched ${String(data.url ?? '')} (HTTP ${String(data.status ?? '?')}):\n${head}${text.length > 1000 ? '…' : ''}`;
+  }
+  return 'The tool ran, but I do not have a summary for this result.';
+}
+
 export async function runPipeline(
   input: string,
   options: PipelineOptions = {},
@@ -246,6 +303,14 @@ export async function runPipeline(
   // Intent — rule-based classifier, labelled as such.
   const intent = classifyIntent(input);
   push(emit('intent', started, `intent=${intent} (rule-based)`));
+
+  // Retest #14: whether the intent has a tool plan (status-check,
+  // web-search, web-fetch) is decided HERE, right after the intent —
+  // the reasoning stage needs it before the plan nodes are built (the
+  // planning stage, below, declares them). A tool intent's answer comes
+  // from the DAG, not from a model.
+  const hasToolPlan =
+    intent === 'status-check' || intent === 'web-search' || intent === 'web-fetch';
 
   // Context — recent conversation from local memory, plus the agent's
   // own context (.sol / .memory, loaded once at startup). The soul/memory
@@ -267,6 +332,12 @@ export async function runPipeline(
   let answer: string;
   let modelId: string | null = null;
   let demoMode = false;
+  // Retest #14: a tool intent's answer comes from the DAG (the tools
+  // are real and do not need a model), so the reasoning stage does not
+  // set the demo disclaimer for one — the answer is composed after the
+  // DAG runs (execution stage). `demoMode` still means "no model
+  // loaded" for the run's metadata; the answer itself is real.
+  let answerFromTools = false;
 
   if (intent === 'identity') {
     // Deterministic identity answer (2026-11-23, NvK: fixed rule until a
@@ -280,6 +351,19 @@ export async function runPipeline(
         'reasoning',
         started,
         'deterministic identity answer (rule-based, no generation)',
+      ),
+    );
+  } else if (hasToolPlan) {
+    // Tool intent (status-check, web-search, web-fetch): the answer
+    // comes from the DAG. No model call is made for it, so it works even
+    // in demo mode. The answer is a placeholder until the DAG runs.
+    answerFromTools = true;
+    answer = '';
+    push(
+      emit(
+        'reasoning',
+        started,
+        'tool intent — answer from the DAG (no model needed)',
       ),
     );
   } else if (decision.route === 'local') {
@@ -444,16 +528,21 @@ export async function runPipeline(
   });
 
   // Execution — only when not blocked. Slice 7: the DAG plan is executed
-  // here (via PlanDAG.run) when the intent needs a tool and a model is
-  // loaded. The tool executor calls the registry; the DAG compares the
-  // predicted vs actual outcome shape per node and replans on failure
-  // (never a silent retry of the same failed step). The tool calls are
-  // recorded for the telemetry trace below. A plan failure is recorded
-  // as an execution note — it does not fabricate an answer.
+  // here (via PlanDAG.run) when the intent needs a tool. The tool
+  // executor calls the registry; the DAG compares the predicted vs
+  // actual outcome shape per node and replans on failure (never a silent
+  // retry of the same failed step). The tool calls are recorded for the
+  // telemetry trace below. A plan failure is recorded as an execution
+  // note — it does not fabricate an answer.
+  //
+  // Retest #14: the DAG runs whenever there is a plan — model or no
+  // model. The tools (diagnostics, the gateway) do not need a model, so
+  // gating the DAG on a loaded model made every tool intent fail in demo
+  // mode. A tool intent's answer is composed from the DAG results here.
   let planToolCalls: string[] = [];
   let planError: string | null = null;
   if (!blocked) {
-    if (planNodes.length > 0 && !demoMode) {
+    if (planNodes.length > 0) {
       const dag = new PlanDAG({
         budget: runBudget,
         executeTool: async (node) => {
@@ -475,9 +564,15 @@ export async function runPipeline(
             `DAG plan executed: ${dagResults.map((r) => `${r.node.tool} (${r.outcome.matched ? 'ok' : 'replanned'})`).join(', ')}`,
           ),
         );
+        if (answerFromTools) {
+          answer = composeToolAnswer(intent, dagResults);
+        }
       } catch (err) {
         planError = err instanceof Error ? err.message : String(err);
         push(emit('execution', started, `DAG plan failed: ${planError}`));
+        if (answerFromTools) {
+          answer = `The tool I needed for that could not run — ${planError}.`;
+        }
       }
     } else {
       push(
@@ -495,9 +590,14 @@ export async function runPipeline(
   }
 
   // Verification — the answer is checked against the evidence record.
-  const verificationNote = demoMode
-    ? 'nothing to verify in demo mode'
-    : `answer length ${answer.length} chars, model ${modelId ?? 'unknown'}`;
+  // A tool-derived answer is verified by the tool's own measured data
+  // (the DAG result), not by a generation — so it is not "nothing to
+  // verify" even when no model is loaded.
+  const verificationNote = answerFromTools
+    ? `answer from tools (${planToolCalls.join(', ') || 'none ran'})`
+    : demoMode
+      ? 'nothing to verify in demo mode'
+      : `answer length ${answer.length} chars, model ${modelId ?? 'unknown'}`;
   push(emit('verification', started, verificationNote));
 
   // Evidence storage — hash + record, always (even demo mode, marked as such).
@@ -566,7 +666,7 @@ export async function runPipeline(
     at: Date.now(),
     modelId,
     tokensPerSecond:
-      demoMode || intent === 'identity'
+      demoMode || intent === 'identity' || answerFromTools
         ? null
         : (localInferenceEngine.getState().lastTokensPerSecond ?? null),
     elapsedMs: Date.now() - started,
