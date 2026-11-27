@@ -337,6 +337,18 @@ test('pipeline: a permission-blocked run is a detected mismatch, stored as an at
     requestedAction: { category: 'publishing', action: 'post to X', detail: 'test post' },
   });
   assert.equal(result.blocked, true);
+  // 2026-11-27: a blocked run emits all 11 stages — execution and
+  // evidence carry a "skipped — blocked" note instead of being omitted
+  // (previously only 9 stage events were emitted).
+  assert.equal(result.stages.length, 11, `blocked run emitted ${result.stages.length} stages, expected 11`);
+  assert.match(
+    result.stages.find((s) => s.stage === 'execution')?.note ?? '',
+    /skipped — blocked/,
+  );
+  assert.match(
+    result.stages.find((s) => s.stage === 'evidence')?.note ?? '',
+    /skipped — blocked/,
+  );
   assert.equal(result.metacognition.outcome.matched, false);
   assert.ok(
     result.metacognition.outcome.diff !== null &&

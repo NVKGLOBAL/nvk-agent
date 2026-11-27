@@ -21,7 +21,7 @@ export const HERO_CAPABILITIES: HeroCapability[] = [
   {
     capabilityId: 'local-inference',
     title: 'Chat with a local AI model',
-    detail: 'Runs on your device. No cloud, no account.',
+    detail: 'Runs on your device when a model is loaded; otherwise answers via the free cloud gateway (turn it off in Settings for local-only).',
     panel: 'chat',
   },
   {

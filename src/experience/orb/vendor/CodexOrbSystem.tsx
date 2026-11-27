@@ -255,7 +255,7 @@ interface CodexOrbSystemProps {
    * event edge, not a state, and it is never driven by a timer.
    */
   flareSignal?: number;
-  /** OS orb mode. Default HolographicCore — the shader orb that shows the state colors. No mode-selector UI yet; the prop is the seam for one. */
+  /** OS orb mode. Default HolographicCore — the shader orb that shows the state colors. OrbHost wires a selector over the 11 modes (2026-11-27); particle mode stays Galaxy unless a preset changes it. */
   orbMode?: OrbMode;
   /** OS particle mode. Default Galaxy — the closest to the v0.1.4 galaxy look. */
   particleMode?: ParticleBackgroundMode;
@@ -2399,7 +2399,12 @@ const CodexOrbSystem: React.FC<CodexOrbSystemProps & { nodeAnimationSpeed?: numb
         </button>
       </div>
 
-      <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 text-center pointer-events-none">
+      {/* 2026-11-27: hidden below 700px width. The canvas is 340px tall
+          on phones and this absolute top-12 title overlaps the orb top
+          there (phone verification 2026-11-27); at >=700px the canvas
+          is 420px tall and the title clears the orb. The DOM node
+          buttons below the canvas still name the nodes on phones. */}
+      <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 text-center pointer-events-none hidden min-[700px]:block">
         <h1 className="text-4xl font-serif-elegant tracking-wider text-white/90 animate-pulseText">NVK</h1>
         <p className="text-cyan-300/70 mt-2">Select a system node</p>
       </div>

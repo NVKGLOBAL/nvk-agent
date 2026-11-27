@@ -40,6 +40,7 @@ import {
 } from './orb-state';
 import { shouldFlareOnStageEvent } from './orb-life';
 import { NVK_AGENT_NODES } from './vendor/constants';
+import { OrbMode } from './vendor/osTypes';
 
 const CodexOrbSystem = lazy(() => import('./vendor/CodexOrbSystem'));
 
@@ -59,6 +60,12 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
   // edge, not a state: it never moves the orb state, and it is never
   // driven by a timer.
   const [flareSignal, setFlareSignal] = useState(0);
+  // 2026-11-27: orb mode selector. The renderer defines 11 OrbModes
+  // and rebuilds its mode objects when the orbMode prop changes
+  // (CodexOrbSystem mode effect); the host owns the selected mode and
+  // passes it down. Default HolographicCore — the verified look.
+  // Particle mode stays Galaxy (the default) until a preset wires it.
+  const [orbMode, setOrbMode] = useState<OrbMode>(OrbMode.HolographicCore);
 
   // Phase A (v0.1.5): the ONLY thing that moves the orb is a real stage
   // event. The 4-second return-to-idle timeout that lived here in v0.1.4
@@ -113,6 +120,7 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
               onGatewaySelect={handleGatewaySelect}
               visualInput={visual}
               flareSignal={flareSignal}
+              orbMode={orbMode}
             />
           </ErrorBoundary>
         </Suspense>
@@ -142,6 +150,30 @@ export function OrbHost({ onNavigate }: { onNavigate: (panel: OrbPanel) => void 
             title={gateway.description}
           >
             {gateway.title.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      {/* Orb mode selector (2026-11-27): the 11 OrbModes the renderer
+          defines, as real buttons. Switching changes the mode objects
+          the renderer builds; Holographic Core is the verified default.
+          Visual confirmation of the non-default modes needs a live
+          browser check after deploy — the modes are defined, not all
+          live-verified. */}
+      <div style={styles.modeRow} role="group" aria-label="Orb mode">
+        <span style={styles.modeLabel}>Orb mode:</span>
+        {Object.values(OrbMode).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            aria-pressed={orbMode === mode}
+            onClick={() => setOrbMode(mode)}
+            style={{
+              ...styles.gatewayButton,
+              ...(orbMode === mode ? styles.gatewayButtonActive : {}),
+            }}
+            title={`Orb mode ${mode}`}
+          >
+            {mode}
           </button>
         ))}
       </div>
@@ -255,6 +287,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#00e5ff',
     borderColor: '#00e5ff',
   },
+  modeRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    padding: '10px 16px',
+    borderTop: '1px solid #1d2b3a',
+    background: '#070b10',
+  },
+  modeLabel: { fontSize: 13, color: '#8fa3b8' },
   status: {
     display: 'flex',
     alignItems: 'center',

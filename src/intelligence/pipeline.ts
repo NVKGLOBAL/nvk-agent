@@ -617,6 +617,18 @@ export async function runPipeline(
         ),
       );
     }
+  } else {
+    // Blocked runs still emit the stage — with a "skipped — blocked"
+    // note instead of an execution. A blocked run previously emitted
+    // only 9 stage events, so the orb, the trace and the stage count
+    // all disagreed about what happened. Nothing executes here.
+    push(
+      emit(
+        'execution',
+        started,
+        'skipped — blocked by the permission gate; nothing executed',
+      ),
+    );
   }
 
   // Verification — the answer is checked against the evidence record.
@@ -643,6 +655,18 @@ export async function runPipeline(
     });
     evidenceId = record.id;
     push(emit('evidence', started, `stored ${evidenceId} (sha ${record.sha256.slice(0, 12)}…)`));
+  } else {
+    // Blocked runs still emit the stage — with a "skipped — blocked"
+    // note instead of a record. No evidence is stored for a run that
+    // never executed (the outcome is stored as an attempt, never as
+    // knowledge — see the metacognition block below).
+    push(
+      emit(
+        'evidence',
+        started,
+        'skipped — blocked by the permission gate; no evidence stored',
+      ),
+    );
   }
 
   // Metacognitive controller — outcome evaluation + learning gate

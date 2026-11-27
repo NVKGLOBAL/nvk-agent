@@ -11,7 +11,7 @@ import { INFERENCE_MODELS } from './inference';
 export interface AgentSettings {
   activeModelId: string;
   cloudEnabled: boolean;
-  cloudProvider: 'gemini' | 'openai' | null;
+  cloudProvider: 'openai' | null;
   /** Provider key lives in memory for the session. Never persisted unless persistKey is true. */
   providerKey: string | null;
   persistKey: boolean;
@@ -174,7 +174,7 @@ export class SettingsStore {
   }
 
   /** Session-only key: set for this session, never written to storage. */
-  setSessionKey(provider: 'gemini' | 'openai', key: string): void {
+  setSessionKey(provider: 'openai', key: string): void {
     this.settings = {
       ...this.settings,
       cloudProvider: provider,

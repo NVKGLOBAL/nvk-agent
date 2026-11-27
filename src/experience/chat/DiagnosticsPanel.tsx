@@ -7,6 +7,10 @@
 import { useState, useEffect } from 'react';
 import { runDiagnostics, DiagnosticsReport } from '../../intelligence/diagnostics';
 import { CAPABILITIES } from '../../intelligence/capability-registry';
+import {
+  permissionGate,
+  AuthorizationRequest,
+} from '../../intelligence/permissions';
 
 const STATUS_COLOR: Record<string, string> = {
   OPERATIONAL: '#3dff9e',
@@ -21,6 +25,20 @@ const STATUS_COLOR: Record<string, string> = {
 export function DiagnosticsPanel() {
   const [report, setReport] = useState<DiagnosticsReport | null>(null);
   const [running, setRunning] = useState(false);
+  // 2026-11-27: on-device approval UI. The permission gate could deny
+  // live but could only be approved live via the phone relay — a
+  // pending request sat invisible on this device. This list shows every
+  // pending request with Approve / Deny wired to the same gate the
+  // pipeline and the relay use (one approval covers one action in one
+  // session, never a blanket).
+  const [pending, setPending] = useState<AuthorizationRequest[]>(() =>
+    permissionGate.pending(),
+  );
+
+  useEffect(
+    () => permissionGate.subscribe(() => setPending(permissionGate.pending())),
+    [],
+  );
 
   async function run() {
     setRunning(true);
@@ -91,6 +109,45 @@ export function DiagnosticsPanel() {
         </div>
       )}
 
+      <h2 style={styles.h2}>Pending approvals</h2>
+      <p style={styles.small}>
+        Restricted actions (financial, payment, publishing, destructive,
+        external-account) stop at the permission gate until the owner
+        approves them here — one approval covers one action in one
+        session. Approving from the phone relay goes through this same gate.
+      </p>
+      {pending.length === 0 ? (
+        <p style={styles.small}>No pending approval requests.</p>
+      ) : (
+        <ul style={styles.pendingList}>
+          {pending.map((req) => (
+            <li key={req.id} style={styles.pendingItem}>
+              <div>
+                <strong>{req.action}</strong> — {req.category}
+                <div style={styles.small}>{req.detail}</div>
+                <div style={styles.small}>
+                  Requested {new Date(req.requestedAt).toLocaleTimeString()}
+                </div>
+              </div>
+              <div style={styles.pendingButtons}>
+                <button
+                  onClick={() => permissionGate.approve(req.id)}
+                  style={styles.approveButton}
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => permissionGate.deny(req.id)}
+                  style={styles.denyButton}
+                >
+                  Deny
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <h2 style={styles.h2}>Capability matrix</h2>
       <p style={styles.small}>
         One table, every capability, honest status. “Planned” is forgivable;
@@ -146,4 +203,34 @@ const styles: Record<string, React.CSSProperties> = {
     verticalAlign: 'top',
   },
   small: { fontSize: 13, color: '#8fa3b8' },
+  pendingList: { listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 10 },
+  pendingItem: {
+    border: '1px solid #2a3b4d',
+    borderRadius: 12,
+    padding: 12,
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  pendingButtons: { display: 'flex', gap: 8 },
+  approveButton: {
+    background: '#3dff9e',
+    color: '#04121a',
+    border: 'none',
+    borderRadius: 10,
+    padding: '8px 14px',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  denyButton: {
+    background: '#2a1214',
+    color: '#ffb3b3',
+    border: '1px solid #ff5a5a',
+    borderRadius: 10,
+    padding: '8px 14px',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
 };

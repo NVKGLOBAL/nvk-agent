@@ -87,8 +87,9 @@ export default function App() {
         <div>
           <h1 style={styles.title}>NVK Agent</h1>
           <p style={styles.subtitle}>
-            Your own AI agent that runs on your phone — no cloud, no account.
-            The orb shows what it is really doing.
+            Your own AI agent that runs on your phone — local-first.
+            Answers via the free cloud gateway by default; turn it off in
+            Settings for local-only. The orb shows what it is really doing.
           </p>
         </div>
         <nav style={styles.nav} className="app-nav" aria-label="Sections">
@@ -149,8 +150,9 @@ export default function App() {
       </main>
 
       <footer style={styles.footer}>
-        NVK Agent v0.1.9 — local-first preview. Local inference first; cloud
-        only by explicit opt-in. No capability is claimed without evidence —
+        NVK Agent v0.1.9 — local-first preview. Local inference first;
+        answers via the free cloud gateway by default (turn it off in
+        Settings for local-only). No capability is claimed without evidence —
         see Diagnostics → Capability matrix.
       </footer>
     </div>

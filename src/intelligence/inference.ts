@@ -10,9 +10,10 @@
  *   - Every number is measured: tokens/s comes from a real timed generation.
  *   - Progress is real download progress from the pipeline callback.
  *
- * Default model: Xenova/LaMini-Flan-T5-248M (text2text-generation, ~248 MB) —
- * the smallest instruction-tuned model in CODEXA's own catalog, runnable on
- * WASM/CPU with no GPU.
+ * Default model: Xenova/Qwen1.5-0.5B-Chat (text-generation, ~350 MB) —
+ * INFERENCE_MODELS[0]. A compact chat model that answers 2+2 correctly
+ * with its chat template (validated by milestone-10). LaMini-Flan-T5-248M
+ * is kept in the catalog for instruction tasks, not the default.
  */
 import { pipeline, env } from '@xenova/transformers';
 

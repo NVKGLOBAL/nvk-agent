@@ -95,8 +95,8 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Intelligence',
     status: 'OPERATIONAL',
     evidence:
-      'src/intelligence/diagnostics.ts measures model state, adapter, counted outbound requests, and storage. It can report FAIL.',
-    lastVerified: '2026-11-21',
+      'src/intelligence/diagnostics.ts measures model state, adapter, counted outbound requests, and storage. It can report FAIL. Live 2026-11-27 (v0.1.9): Diagnostics overall FAIL — no local model loaded, chat answering via the free cloud gateway, not demo mode.',
+    lastVerified: '2026-11-27',
   },
   {
     id: 'settings',
@@ -104,7 +104,7 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Experience',
     status: 'OPERATIONAL',
     evidence:
-      'src/intelligence/settings.ts: cloud toggle OFF by default, provider keys session-only by default, model management present.',
+      'src/intelligence/settings.ts: provider cloud OFF by default (cloudEnabled: false); free cloud gateway ON by default (freeCloudEnabled: true); provider keys session-only by default; model management present.',
     lastVerified: '2026-11-21',
   },
   {
@@ -122,8 +122,8 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Experience',
     status: 'OPERATIONAL',
     evidence:
-      'Renderer swapped in v0.1.6 (Phase B): NVK-AI-OS CodexOrbSystem port (NVKGLOBAL/NVK-AI-OS @ b723bc4d9), 11 orb modes + 11 particle modes, behind the Phase A OrbVisualInput interface. Orb states are driven only by real pipeline state. 41/41 tests pass, tsc clean, build succeeds; the live-browser check comes after deploy, as before.',
-    lastVerified: '2026-11-22',
+      'Renderer swapped in v0.1.6 (Phase B): NVK-AI-OS CodexOrbSystem port (NVKGLOBAL/NVK-AI-OS @ b723bc4d9), 11 orb modes defined, 1 wired as the verified default (HolographicCore/Galaxy); OrbHost wires a selector over all 11 modes (2026-11-27), non-default modes not live-verified. Orb states are driven only by real pipeline state. Live 2026-11-27 (phone, 640×1308): orb renders — sphere + 4 node orbs + particles; the "Select a system node" title overlapped the orb top on the 340px phone canvas, so it is hidden below 700px width (DOM node buttons still name the nodes on phones).',
+    lastVerified: '2026-11-27',
   },
   {
     id: 'resonance-visualizer',
@@ -144,11 +144,57 @@ export const CAPABILITIES: Capability[] = [
     lastVerified: '2026-11-21',
   },
   {
+    id: 'cloud-gateway',
+    name: 'Free cloud gateway (Kilo, keyless, shared NVK brain endpoint)',
+    layer: 'Intelligence',
+    status: 'OPERATIONAL',
+    evidence:
+      'Live 2026-11-27 (v0.1.9, phone + desktop): chat answered "Four" to 2+2 via the Kilo gateway (codexa.nvkglobal.workers.dev/ai/generate) with an evidence ID; composer works after the answer. Unit-tested in tests/router-gateway.test.ts (stubbed fetch: 200 returns text+tier, 429 and network failure return null and fall through to demo mode, never a fake answer).',
+    lastVerified: '2026-11-27',
+  },
+  {
+    id: 'web-search',
+    name: 'Web search (via the gateway)',
+    layer: 'Intelligence',
+    status: 'OPERATIONAL',
+    evidence:
+      'src/intelligence/tools.ts web_search calls the gateway (codexa.nvkglobal.workers.dev/search); unit-tested in tests/connectors.test.ts (stubbed fetch: a gateway success returns real results, a gateway failure returns an honest unavailable, never fabricated results). Pipeline plans a web_search node for search intents (tests/pipeline-connectors.test.ts).',
+    lastVerified: null,
+  },
+  {
+    id: 'web-fetch',
+    name: 'Web fetch (via the gateway)',
+    layer: 'Intelligence',
+    status: 'OPERATIONAL',
+    evidence:
+      'src/intelligence/tools.ts web_fetch calls the gateway (codexa.nvkglobal.workers.dev/fetch); unit-tested in tests/connectors.test.ts (stubbed fetch: a gateway success returns the fetched text, a gateway failure or a missing URL returns an honest unavailable, never a fabricated page).',
+    lastVerified: null,
+  },
+  {
+    id: 'voice',
+    name: 'Voice commands (spoken command → same pipeline)',
+    layer: 'Intelligence',
+    status: 'PARTIAL',
+    evidence:
+      'src/intelligence/voice.ts routes a spoken transcript through the same pipeline as typed chat (same tool contract, permission gate, evidence store); unit-tested in tests/voice.test.ts (2026-11-23). PARTIAL: the command path is tested, but browser SpeechRecognition (listening) and SpeechSynthesis (speaking back) are not live-verified in this app.',
+    lastVerified: '2026-11-23',
+  },
+  {
+    id: 'relay',
+    name: 'Phone control (relay)',
+    layer: 'Intelligence',
+    status: 'PARTIAL',
+    evidence:
+      'src/intelligence/relayAdapter.ts: pairing codes, chat/status commands, and approve/reject through the real permission gate; unit-tested in tests/relay-adapter.test.ts (stubbed fetch). PARTIAL: no deployed relay Worker is configured (relayUrl empty by default) — live phone proof needs the Worker deployed and the URL pasted in Settings.',
+    lastVerified: null,
+  },
+  {
     id: 'cloud-gemini',
     name: 'Cloud provider — Gemini (opt-in only)',
     layer: 'Intelligence',
-    status: 'BLOCKED',
-    evidence: 'No API key configured and cloud is OFF by default. Blocked on owner opt-in + key.',
+    status: 'MISSING',
+    evidence:
+      'Removed per owner direction (2026-11-23, no Gemini API in NVK builds): the Gemini branch was deleted from src/intelligence/router.ts, the provider option removed from Settings, and cloudProvider narrowed to OpenAI only. No Gemini code ships.',
     lastVerified: null,
     notes: 'When enabled, requests leave the device — stated plainly in the UI.',
   },
@@ -166,7 +212,7 @@ export const CAPABILITIES: Capability[] = [
     layer: 'Sovereign Infrastructure',
     status: 'MISSING',
     evidence:
-      'No payment provider is wired. CODEXA pricing (1 week free, then $20/mo) is decided; the checkout is not built.',
+      'No payment provider is wired. CODEXA pricing is $20/mo after a 1-day trial (live CODEXA, single tier); the checkout is not built.',
     lastVerified: null,
   },
   {

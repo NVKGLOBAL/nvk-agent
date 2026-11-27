@@ -1,8 +1,10 @@
 /**
  * NVK Agent — inference router.
  *
- * Local FIRST, always. Cloud providers (Gemini / OpenAI) are available only
+ * Local FIRST, always. A cloud provider (OpenAI) is available only
  * when the owner explicitly enables cloud in Settings AND supplies a key.
+ * A second provider path was removed per owner direction (2026-11-23)
+ * — no second provider ships in this file.
  * The free cloud gateway (the shared NVK brain endpoint, Kilo free tier,
  * keyless) is ON by default — NvK wants the AI unlimited (2026-11-23) and
  * approved the same Kilo tier in CODEXA's default chain. It answers only
@@ -18,7 +20,7 @@ import { settingsStore } from './settings';
 /** The shared NVK brain endpoint — the same Worker CODEXA serves from. */
 export const NVK_GATEWAY_BASE = 'https://codexa.nvkglobal.workers.dev';
 
-export type Route = 'local' | 'cloud-gemini' | 'cloud-openai' | 'cloud-gateway';
+export type Route = 'local' | 'cloud-openai' | 'cloud-gateway';
 
 export interface RouteDecision {
   route: Route;
@@ -32,7 +34,7 @@ export function decideRoute(): RouteDecision {
   }
   if (settings.cloudEnabled && settings.providerKey && settings.cloudProvider) {
     return {
-      route: settings.cloudProvider === 'gemini' ? 'cloud-gemini' : 'cloud-openai',
+      route: 'cloud-openai',
       reason: `Local model not loaded; cloud explicitly enabled (${settings.cloudProvider}). Requests leave this device.`,
     };
   }
@@ -50,7 +52,7 @@ export function decideRoute(): RouteDecision {
 
 export interface CloudGenerateResult {
   text: string;
-  provider: 'gemini' | 'openai';
+  provider: 'openai';
 }
 
 /**
@@ -69,25 +71,6 @@ export async function generateViaCloud(
     );
   }
   const key = settings.providerKey;
-
-  if (settings.cloudProvider === 'gemini') {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: maxNewTokens },
-        }),
-      },
-    );
-    if (!res.ok) throw new Error(`Gemini request failed: HTTP ${res.status}`);
-    const data = await res.json();
-    const text =
-      data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') ?? '';
-    return { text, provider: 'gemini' };
-  }
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',

@@ -5,15 +5,14 @@
  * point at ./osTypes instead of the OS repo's ../../types.
  *
  * v0.1.6 (Phase B — orb renderer swap, 2026-11-22): the 15 preset
- * definitions + getCodexModeDefinition / getPresetsForCodexMode. NOT
- * wired to any UI yet — there is no mode-selector surface in Phase B,
- * and the orb defaults to HolographicCore + Galaxy. This file is the
- * seam for one: a future selector can call getPresetsForCodexMode and
- * pass the returned orbMode / particleMode / nodeAnimationSpeed into
- * CodexOrbSystem's props. NOTE: presetPanelIds name OS panels that do
- * not exist in this app (Phase C) — a selector must ignore that field
- * until the cluster/panel system lands, and must never invent panels
- * to fill it.
+ * definitions + getCodexModeDefinition / getPresetsForCodexMode. The
+ * PRESETS are still not wired to any UI — but OrbHost now wires a
+ * selector over the 11 OrbModes directly (2026-11-27), passing the
+ * chosen orbMode into CodexOrbSystem; particle mode stays Galaxy
+ * (the default) until a preset wires it. NOTE: presetPanelIds name
+ * OS panels that do not exist in this app (Phase C) — a selector must
+ * ignore that field until the cluster/panel system lands, and must
+ * never invent panels to fill it.
  */
 import type { CodexModeDefinition } from './osTypes';
 import { CodexModeId, OrbMode, ParticleBackgroundMode, PanelLayout } from './osTypes';

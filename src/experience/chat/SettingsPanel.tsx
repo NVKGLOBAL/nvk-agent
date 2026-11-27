@@ -281,14 +281,13 @@ export function SettingsPanel({ relayClient }: { relayClient: AgentRelayClient |
             value={settings.cloudProvider ?? ''}
             onChange={(e) =>
               update({
-                cloudProvider: (e.target.value as 'gemini' | 'openai') || null,
+                cloudProvider: (e.target.value as 'openai') || null,
               })
             }
             disabled={!settings.cloudEnabled}
             aria-label="Cloud provider"
           >
             <option value="">Select provider…</option>
-            <option value="gemini">Google Gemini</option>
             <option value="openai">OpenAI</option>
           </select>
           <input
