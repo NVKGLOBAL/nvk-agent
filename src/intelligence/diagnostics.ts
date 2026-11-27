@@ -52,6 +52,21 @@ export function localModelDetail(engineStatus: string, demoMode: boolean): strin
     : `No model loaded (state: ${engineStatus}). Chat is answering through the free cloud gateway (Kilo) — not demo mode.`;
 }
 
+/**
+ * Detail line for the "Outbound network requests" check. The old text at
+ * zero said "Nothing has left this device" — false whenever the count was
+ * merely unrecorded (the pre-fix tally was in-memory only, so a page
+ * reload zeroed it after the gateway had already answered). Zero now
+ * means only "none counted this session", never a claim about the device.
+ * Pure function, tested.
+ */
+export function outboundDetail(tally: { total: number; byHost: Record<string, number> }): string {
+  if (tally.total === 0) return '0 requests counted this session.';
+  return `${tally.total} requests: ${Object.entries(tally.byHost)
+    .map(([h, n]) => `${h} (${n})`)
+    .join(', ')}.`;
+}
+
 export async function runDiagnostics(): Promise<DiagnosticsReport> {
   const checks: DiagnosticCheck[] = [];
   const engine = localInferenceEngine.getState();
@@ -96,13 +111,8 @@ export async function runDiagnostics(): Promise<DiagnosticsReport> {
   const outbound = outboundCounter.get();
   checks.push({
     name: 'Outbound network requests (this session)',
-    result: outbound.total === 0 ? 'pass' : 'pass',
-    detail:
-      outbound.total === 0
-        ? '0 requests. Nothing has left this device.'
-        : `${outbound.total} requests: ${Object.entries(outbound.byHost)
-            .map(([h, n]) => `${h} (${n})`)
-            .join(', ')}.`,
+    result: 'pass',
+    detail: outboundDetail(outbound),
   });
 
   // 4. Storage.

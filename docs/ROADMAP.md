@@ -26,7 +26,7 @@ marked complete on a claim.
 ## G2 — Cloud, earned
 - [ ] Owner opts in to one cloud provider with a session key; a cloud answer
       is produced and labelled as leaving the device
-- [ ] Outbound counter shows the real request in diagnostics
+- [x] Outbound counter shows the real request in diagnostics (fixed 2026-11-24 — see NVK-AGENT-OUTBOUND-COUNTER-FIX-LOG-2026-11-24.md)
 - [ ] Self-hosted fonts/icons/libraries replace every runtime CDN (fixes the
       last of the no-APIs claim; the diagnostic counts real requests)
 

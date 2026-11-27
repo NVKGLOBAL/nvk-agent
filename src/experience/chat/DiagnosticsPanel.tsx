@@ -4,7 +4,7 @@
  * Fix-list items 4 + 16: diagnostics that can say FAIL, and one page listing
  * every capability with its honest status and evidence.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { runDiagnostics, DiagnosticsReport } from '../../intelligence/diagnostics';
 import { CAPABILITIES } from '../../intelligence/capability-registry';
 
@@ -30,6 +30,25 @@ export function DiagnosticsPanel() {
       setRunning(false);
     }
   }
+
+  // 2026-11-24 fix: the report used to be a frozen snapshot from the last
+  // button click — run diagnostics, then chat, and the panel still showed
+  // the pre-chat "0 requests". Run fresh on mount so opening the panel
+  // after a chat shows the current count; the button still re-runs.
+  useEffect(() => {
+    let alive = true;
+    setRunning(true);
+    runDiagnostics()
+      .then((r) => {
+        if (alive) setReport(r);
+      })
+      .finally(() => {
+        if (alive) setRunning(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div style={styles.wrap}>

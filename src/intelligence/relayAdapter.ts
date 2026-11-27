@@ -258,7 +258,12 @@ export class AgentRelayClient {
     this.desktopId = opts.desktopId;
     this.desktopToken = opts.desktopToken;
     this.getLiveStatus = opts.getLiveStatus ?? null;
-    this.fetchImpl = opts.fetchImpl ?? fetch;
+    // Resolve the global fetch lazily (at call time, not construction):
+    // the outbound counter wraps window.fetch at startup, and a fetch
+    // captured before the wrap would silently bypass the count. An
+    // injected fetchImpl (tests) still wins.
+    this.fetchImpl =
+      opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
     this.pollMs = opts.pollMs ?? 2000;
   }
 

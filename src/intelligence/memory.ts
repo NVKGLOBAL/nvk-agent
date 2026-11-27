@@ -7,6 +7,8 @@
  * telemetry, no external call in this module.
  */
 
+import { outboundCounter } from './outbound';
+
 export interface MemoryRecord {
   key: string;
   value: unknown;
@@ -289,6 +291,12 @@ export class MemoryStore {
         .filter((k) => k.startsWith(LS_PREFIX))
         .forEach((k) => localStorage.removeItem(k));
     }
+    // The outbound-request tally is device state too: a true clear zeroes
+    // it, so Diagnostics after a clear honestly reads 0 "counted this
+    // session" instead of carrying pre-clear traffic. (The Kilo toggle
+    // staying checked after a clear is the factory default, not a failure;
+    // the count resetting is the intended counterpart.)
+    outboundCounter.reset();
     // v0.1.8: the model weights do NOT live in IndexedDB or
     // localStorage — they live in the Cache API store 'transformers-cache'
     // (see inference.ts isModelWeightsCached), which clearAll() never
