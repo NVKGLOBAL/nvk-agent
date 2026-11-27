@@ -8,6 +8,10 @@
       name="description"
       content="NVK's sovereign AI agent. Local-first inference, NVK as its face, honest capability status."
     />
+    <meta name="theme-color" content="#050608" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
     <style>
       /* System font stack on purpose: no Google Fonts, no runtime CDN fonts.
          Self-hosting fonts is part of earning the no-external-requests claim. */
@@ -20,10 +24,19 @@
           Helvetica, Arial, sans-serif;
       }
     </style>
-    <script type="module" crossorigin src="./assets/index-D_qBcRhQ.js"></script>
+    <script type="module" crossorigin src="./assets/index-DNYFMZDH.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-C4Iwf02h.css">
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Register the service worker for installable PWA support.
+      // Guarded: a registration failure must never break the app load.
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').catch(() => {});
+        });
+      }
+    </script>
   </body>
 </html>
